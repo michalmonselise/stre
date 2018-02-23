@@ -19,7 +19,7 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
       initialModel: LatentMatrixFactorizationModel,
       numExamples: Long): LatentMatrixFactorizationModel = {
 
-    var userFeatures = initialModel.userFeatures
+    var userFeatures: RDD[LatentFactor] = initialModel.userFeatures
     var prodFeatures = initialModel.productFeatures
     val globalBias = initialModel.globalBias
     val lambda = params.getLambda
@@ -33,7 +33,7 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
     for (i <- 0 until iter) {
       val currentStepSize = stepSize * math.pow(stepDecay, i)
       val currentBiasStepSize = biasStepSize * math.pow(stepDecay, i)
-      val gradients = ratings.map(r => (r.user, r)).join(userFeatures)
+      val gradients = ratings.map(r => (Option(r.user), r)).join(userFeatures.map(x => (x.id, x.vector)))
         .map { case (user, (rating, uFeatures)) =>
           (rating.item, (user, rating.rating, uFeatures))
         }.join(prodFeatures).map { case (item, ((user, rating, uFeatures), pFeatures)) =>
@@ -41,12 +41,12 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
             globalBias, currentStepSize, currentBiasStepSize, lambda)
           ((user, step._1), (item, step._2))
         }.persist(intermediateStorageLevel)
-      val userGradients = IndexedRDD(gradients.map(_._1)
+      val userGradients = RDD(gradients.map(_._1)
         .aggregateByKey(new LatentFactor(0f, new Array[Float](rank)))(
           seqOp = (base, example) => base += example,
           combOp = (a, b) => a += b
         ))
-      val prodGradients = IndexedRDD(gradients.map(_._2)
+      val prodGradients = RDD(gradients.map(_._2)
         .aggregateByKey(new LatentFactor(0f, new Array[Float](rank)))(
           seqOp = (base, example) => base += example,
           combOp = (a, b) => a += b
