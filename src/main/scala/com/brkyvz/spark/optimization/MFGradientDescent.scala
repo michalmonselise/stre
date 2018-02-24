@@ -19,7 +19,7 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
       initialModel: LatentMatrixFactorizationModel,
       numExamples: Long): LatentMatrixFactorizationModel = {
 
-    var userFeatures: RDD[LatentFactor] = initialModel.userFeatures
+    var userFeatures = initialModel.userFeatures
     var prodFeatures = initialModel.productFeatures
     val globalBias = initialModel.globalBias
     val lambda = params.getLambda
@@ -33,7 +33,7 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
     for (i <- 0 until iter) {
       val currentStepSize = stepSize * math.pow(stepDecay, i)
       val currentBiasStepSize = biasStepSize * math.pow(stepDecay, i)
-      val gradients = ratings.map(r => (Option(r.user), r)).join(userFeatures.map(x => (x.id, x.vector)))
+      val gradients = ratings.map(r => r.user, r)).join(userFeatures.map(x => (x.id, x.latent.vector)))
         .map { case (user, (rating, uFeatures)) =>
           (rating.item, (user, rating.rating, uFeatures))
         }.join(prodFeatures).map { case (item, ((user, rating, uFeatures), pFeatures)) =>
@@ -63,10 +63,9 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
     initialModel match {
       case streaming: StreamingLatentMatrixFactorizationModel =>
         new StreamingLatentMatrixFactorizationModel(rank, userFeatures, prodFeatures,
-          globalBias, streaming.observedExamples, initialModel.minRating, initialModel.maxRating)
+          globalBias, streaming.observedExamples)
       case _ =>
-        new LatentMatrixFactorizationModel(rank, userFeatures, prodFeatures, globalBias,
-          initialModel.minRating, initialModel.maxRating)
+        new LatentMatrixFactorizationModel(rank, userFeatures, prodFeatures, globalBias)
     }
   }
 }

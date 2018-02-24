@@ -5,7 +5,6 @@ import java.util.Random
 import org.slf4j.{Logger, LoggerFactory}
 import org.apache.spark.ml.recommendation.ALS.Rating
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.functions.lit
 
 import com.brkyvz.spark.utils.VectorUtils
 
