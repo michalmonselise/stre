@@ -89,7 +89,8 @@ class StreamingLatentMatrixFactorization(params: LatentMatrixFactorizationParams
   def this() = this(new LatentMatrixFactorizationParams)
 
   /** Return the latest model. */
-  def latestModel() = model.get.asInstanceOf[StreamingLatentMatrixFactorizationModel]
+  def latestModel(): StreamingLatentMatrixFactorizationModel =
+    model.get.asInstanceOf[StreamingLatentMatrixFactorizationModel]
 
   /**
    * Update the model by training on batches of data from a DStream.

@@ -14,12 +14,12 @@ object VectorUtils extends Serializable {
     sum
   }
 
-  def addInto(into: Array[Float], x: Array[Float], scale: Long = 1L): Unit = {
+  def addInto(into: Array[Float], x: Array[Float]): Unit = {
     require(into.length == x.length, "Trying to add vectors with different lengths.")
     val len = into.length
     var i = 0
     while (i < len) {
-      into(i) += x(i) / scale
+      into(i) += x(i)
       i += 1
     }
   }

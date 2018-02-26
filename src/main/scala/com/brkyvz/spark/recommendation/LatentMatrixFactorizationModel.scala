@@ -17,10 +17,11 @@ class LatentMatrixFactorizationModel(
   val log: Logger = LoggerFactory.getLogger(this.getClass)
   /** Predict the rating of one user for one product. */
   def predict(user: Long, product: Long): Float = {
-    val uFeatures = userFeatures.filter(u => u._1 == user).collect().headOption
-    val pFeatures = productFeatures.filter(p => p._1 == product).collect().headOption
-    LatentMatrixFactorizationModel.predict(user, product, uFeatures, pFeatures, globalBias).rating
+    val uFeatures: Option[LatentID] = userFeatures.filter(u => u.id == user).collect().headOption
+    val pFeatures: Option[LatentID] = productFeatures.filter(p => p.id == product).collect().headOption
+    LatentMatrixFactorizationModel.predict(uFeatures, pFeatures, globalBias).rating
   }
+
 
   /**
    * Predict the rating of many users for many products.
@@ -32,23 +33,24 @@ class LatentMatrixFactorizationModel(
    * @return RDD of Ratings.
    */
   def predict(usersProducts: RDD[(Long, Long)]): RDD[Rating[Long]] = {
-    val users = usersProducts.map(x => (Option(x._1), x._2)).
-      leftOuterJoin(userFeatures.map(x => (x.id, x.vector))).
+    val users = usersProducts.leftOuterJoin[LatentFactor](userFeatures.map(x => (x.id, x.latent))).
       map { case (user, (product, uFeatures)) =>
       (product, (user, uFeatures))
     }
     val sc = usersProducts.sparkContext
     val globalAvg = sc.broadcast(globalBias)
-    users.leftOuterJoin(productFeatures).map { case (product, ((user, uFeatures), pFeatures)) =>
-      LatentMatrixFactorizationModel.predict(user, product, uFeatures, pFeatures, globalAvg.value)
+    users.leftOuterJoin[LatentFactor](productFeatures.map(x => (x.id, x.latent))).
+      map { case (product, ((user, uFeatures), pFeatures)) =>
+      LatentMatrixFactorizationModel.predict(Option(LatentID(uFeatures.head, user)),
+        Option(LatentID(pFeatures.head, product)), globalAvg.value)
     }
   }
 }
 
 case class StreamingLatentMatrixFactorizationModel(
     override val rank: Int,
-    override val userFeatures: RDD[LatentFactor], // bias and the user row
-    override val productFeatures: RDD[LatentFactor], // bias and the product row
+    override val userFeatures: RDD[LatentID], // bias and the user row
+    override val productFeatures: RDD[LatentID], // bias and the product row
     override val globalBias: Float,
     observedExamples: Long)
   extends LatentMatrixFactorizationModel(rank, userFeatures, productFeatures, globalBias)
@@ -72,22 +74,22 @@ object LatentMatrixFactorizationModel extends Serializable {
       new LatentFactorGenerator(rank)
 
     // Generate random entries for missing user-product factors
-    val usersAndRatings: RDD[(Long, Rating[Long])] = ratings.map(r => (r.user, r))
+    val usersAndRatings = ratings.map(r => (r.user, r))
     val productsAndRatings: RDD[(Long, Rating[Long])] = ratings.map(r => (r.item, r))
     val sc = ratings.sparkContext
-    var userFeatures = initialModel match {
+    var userFeatures: RDD[LatentID] = initialModel match {
       case Some(model) => model.userFeatures
       case None =>
-        sc.parallelize(Seq.empty[(Long, LatentFactor)], ratings.partitions.length)
+        sc.parallelize(Seq.empty[(Long, LatentFactor)], ratings.partitions.length).map(x => LatentID(x._2, x._1))
     }
 
-    var prodFeatures = initialModel match {
+    var prodFeatures: RDD[LatentID] = initialModel match {
       case Some(model) => model.productFeatures
       case None =>
-        sc.parallelize(Seq.empty[(Long, LatentFactor)], ratings.partitions.length)
+        sc.parallelize(Seq.empty[(Long, LatentFactor)], ratings.partitions.length).map(x => LatentID(x._2, x._1))
     }
 
-    userFeatures = RDD(usersAndRatings.fullOuterJoin(userFeatures)
+    userFeatures = RDD(usersAndRatings.fullOuterJoin[Array[Float]](userFeatures.map(x => (x.id, x.latent.vector)))
       .mapPartitionsWithIndex { case (partitionId, iterator) =>
         randGenerator.setSeed(seed + 2 << 16 + partitionId)
         iterator.map { case (user, (rating, uFeatures)) =>
@@ -95,7 +97,7 @@ object LatentMatrixFactorizationModel extends Serializable {
         }
     })
 
-    prodFeatures = RDD(productsAndRatings.fullOuterJoin(prodFeatures)
+    prodFeatures = RDD(productsAndRatings.fullOuterJoin[Array[Float]](prodFeatures.map(x => (x.id, x.latent.vector)))
       .mapPartitionsWithIndex { case (partitionId, iterator) =>
         randGenerator.setSeed(seed + 2 << 32 + partitionId)
         iterator.map { case (user, (rating, pFeatures)) =>
@@ -115,11 +117,11 @@ object LatentMatrixFactorizationModel extends Serializable {
 
     val initializedModel = initialModel.getOrElse(None) match {
       case streaming: StreamingLatentMatrixFactorizationModel =>
-        new StreamingLatentMatrixFactorizationModel(rank, userFeatures, prodFeatures,
+        StreamingLatentMatrixFactorizationModel(rank, userFeatures, prodFeatures,
           streaming.globalBias, streaming.observedExamples)
       case _ =>
         if (isStreaming) {
-          new StreamingLatentMatrixFactorizationModel(rank, userFeatures, prodFeatures, globalBias, numExamples)
+          StreamingLatentMatrixFactorizationModel(rank, userFeatures, prodFeatures, globalBias, numExamples)
         } else {
           new LatentMatrixFactorizationModel(rank, userFeatures, prodFeatures, globalBias)
         }
@@ -128,22 +130,22 @@ object LatentMatrixFactorizationModel extends Serializable {
   }
 
   def predict(
-      user: Long,
-      product: Long,
-      uFeatures: Option[LatentFactor],
-      pFeatures: Option[LatentFactor],
-      globalBias: Float): Rating[Option[Long]] = {
+      uFeatures: Option[LatentID],
+      pFeatures: Option[LatentID],
+      globalBias: Float): Rating[Long] = {
+    val user = uFeatures.head.id
+    val product = pFeatures.head.id
     val finalRating =
       if (uFeatures.isDefined && pFeatures.isDefined) {
         Rating(user, product, LatentMatrixFactorizationModel.getRating(uFeatures.get, pFeatures.get,
           globalBias))
       } else if (uFeatures.isDefined) {
         log.warn(s"Product data missing for product id $product. Will use user factors.")
-        val rating = globalBias + uFeatures.get.bias
+        val rating = globalBias + uFeatures.get.latent.bias
         Rating(user, product, Float(0.0))
       } else if (pFeatures.isDefined) {
         log.warn(s"User data missing for user id $user. Will use product factors.")
-        val rating = globalBias + pFeatures.get.bias
+        val rating = globalBias + pFeatures.get.latent.bias
         Rating(user, product, Float(0.0))
       } else {
         log.warn(s"Both user and product factors missing for ($user, $product). " +
@@ -155,18 +157,11 @@ object LatentMatrixFactorizationModel extends Serializable {
   }
 
   def getRating(
-      userFeatures: LatentFactor,
-      prodFeatures: LatentFactor,
+      userFeatures: LatentID,
+      prodFeatures: LatentID,
       bias: Float): Float = {
-     getRating(userFeatures, prodFeatures, bias)
-  }
-
-  def getRating(
-      userFeatures: LatentFactor,
-      prodFeatures: LatentFactor,
-      bias: Float): Float = {
-    val dot = VectorUtils.dot(userFeatures.vector, prodFeatures.vector)
-    dot + userFeatures.bias + prodFeatures.bias + bias
+    val dot = VectorUtils.dot(userFeatures.latent.vector, prodFeatures.latent.vector)
+    dot + userFeatures.latent.bias + prodFeatures.latent.bias + bias
   }
 }
 
@@ -178,9 +173,9 @@ case class LatentFactor(var bias: Float, vector: Array[Float]) extends Serializa
     this
   }
 
-  def divideAndAdd(other: LatentFactor, scale: Long): this.type = {
-    bias += other.bias / scale
-    VectorUtils.addInto(vector, other.vector, scale)
+  def divideAndAdd(other: LatentFactor): this.type = {
+    bias += other.bias
+    VectorUtils.addInto(vector, other.vector)
     this
   }
 
