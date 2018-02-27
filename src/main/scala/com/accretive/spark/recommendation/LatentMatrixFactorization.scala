@@ -10,7 +10,7 @@ import org.slf4j.{Logger, LoggerFactory}
 
 import scala.reflect.ClassTag
 
-import com.brkyvz.spark.optimization.MFGradientDescent
+import com.accretive.spark.optimization.MFGradientDescent
 
 /**
  * Trains a Matrix Factorization Model for Recommendation Systems. The model consists of

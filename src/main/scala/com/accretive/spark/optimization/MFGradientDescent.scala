@@ -1,6 +1,6 @@
 package com.accretive.spark.optimization
 
-import com.brkyvz.spark.recommendation._
+import com.accretive.spark.recommendation._
 import org.apache.spark.ml.recommendation.ALS.Rating
 import org.apache.spark.rdd.RDD
 

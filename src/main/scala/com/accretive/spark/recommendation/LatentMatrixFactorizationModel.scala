@@ -1,4 +1,4 @@
-package com.brkyvz.spark.recommendation
+package com.accretive.spark.recommendation
 
 import java.util.Random
 
@@ -6,7 +6,7 @@ import org.slf4j.{Logger, LoggerFactory}
 import org.apache.spark.ml.recommendation.ALS.Rating
 import org.apache.spark.rdd.RDD
 
-import com.brkyvz.spark.utils.VectorUtils
+import com.accretive.spark.utils.VectorUtils
 
 class LatentMatrixFactorizationModel(
     val rank: Int,
