@@ -142,16 +142,16 @@ object LatentMatrixFactorizationModel extends Serializable {
       } else if (uFeatures.isDefined) {
         log.warn(s"Product data missing for product id $product. Will use user factors.")
         val rating = globalBias + uFeatures.get.latent.bias
-        Rating(user, product, Float(0.0))
+        Rating(user, product, 0f)
       } else if (pFeatures.isDefined) {
         log.warn(s"User data missing for user id $user. Will use product factors.")
         val rating = globalBias + pFeatures.get.latent.bias
-        Rating(user, product, Float(0.0))
+        Rating(user, product, 0f)
       } else {
         log.warn(s"Both user and product factors missing for ($user, $product). " +
           "Returning global average.")
         val rating = globalBias
-        Rating(user, product, Float(0.0))
+        Rating(user, product, 0f)
       }
     finalRating
   }
