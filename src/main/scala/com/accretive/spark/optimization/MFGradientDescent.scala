@@ -54,14 +54,16 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
           seqOp = (base, example) => base += example,
           combOp = (a, b) => a += b
         )
-      userFeatures = userFeatures.map(x => (x.id, x.latent)).leftOuterJoin(userGradients) {
-        case (id, base: LatentFactor, gradient: LatentFactor) =>
-        val a = gradient.divideAndAdd(base)
+      val uf = userFeatures.map(x => (x.id, x.latent)).leftOuterJoin[LatentFactor](userGradients)
+        userFeatures = uf map {
+        case (id, (base: LatentFactor, gradient: Option[LatentFactor])) =>
+        val a = gradient.head.divideAndAdd(base)
         LatentID(a, id)
       }
-      prodFeatures = prodFeatures.map(x => (x.id, x.latent)).leftOuterJoin(prodGradients) {
-        case (id, base: LatentFactor, gradient: LatentFactor) =>
-          val a = gradient.divideAndAdd(base)
+      val pf = prodFeatures.map(x => (x.id, x.latent)).leftOuterJoin(prodGradients)
+      prodFeatures = pf map {
+        case (id, (base: LatentFactor, gradient: Option[LatentFactor])) =>
+          val a = gradient.head.divideAndAdd(base)
           LatentID(a, id)
       }
     }

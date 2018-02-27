@@ -70,11 +70,10 @@ object LatentMatrixFactorizationModel extends Serializable {
     val rank = params.getRank
     val seed = params.getSeed
 
-    val randGenerator =
-      new LatentFactorGenerator(rank)
+    val randGenerator = new LatentFactorGenerator(rank)
 
     // Generate random entries for missing user-product factors
-    val usersAndRatings = ratings.map(r => (r.user, r))
+    val usersAndRatings: RDD[(Long, Rating[Long])] = ratings.map(r => (r.user, r))
     val productsAndRatings: RDD[(Long, Rating[Long])] = ratings.map(r => (r.item, r))
     val sc = ratings.sparkContext
     var userFeatures: RDD[LatentID] = initialModel match {
@@ -89,21 +88,21 @@ object LatentMatrixFactorizationModel extends Serializable {
         sc.parallelize(Seq.empty[(Long, LatentFactor)], ratings.partitions.length).map(x => LatentID(x._2, x._1))
     }
 
-    userFeatures = RDD(usersAndRatings.fullOuterJoin[Array[Float]](userFeatures.map(x => (x.id, x.latent.vector)))
-      .mapPartitionsWithIndex { case (partitionId, iterator) =>
+    val userFeaturesJoined = usersAndRatings.fullOuterJoin[LatentFactor](userFeatures.map(x => (x.id, x.latent)))
+    val userFeaturesWithRandom = userFeaturesJoined.mapPartitionsWithIndex { case (partitionId, iterator) =>
         randGenerator.setSeed(seed + 2 << 16 + partitionId)
         iterator.map { case (user, (rating, uFeatures)) =>
           (user, uFeatures.getOrElse(randGenerator.nextValue()))
         }
-    })
+    }.map(x => LatentID(x._2, x._1))
 
-    prodFeatures = RDD(productsAndRatings.fullOuterJoin[Array[Float]](prodFeatures.map(x => (x.id, x.latent.vector)))
-      .mapPartitionsWithIndex { case (partitionId, iterator) =>
+    val prodFeaturesJoined = productsAndRatings.fullOuterJoin[LatentFactor](prodFeatures.map(x => (x.id, x.latent)))
+    val prodFeaturesWithRandom = prodFeaturesJoined.mapPartitionsWithIndex { case (partitionId, iterator) =>
         randGenerator.setSeed(seed + 2 << 32 + partitionId)
         iterator.map { case (user, (rating, pFeatures)) =>
           (user, pFeatures.getOrElse(randGenerator.nextValue()))
         }
-    })
+    }.map(x => LatentID(x._2, x._1))
 
     val (ratingSum, numRatings) =
       ratings.map(r => (r.rating, 1L)).reduce((a, b) => (a._1 + b._1, a._2 + b._2))
@@ -117,11 +116,11 @@ object LatentMatrixFactorizationModel extends Serializable {
 
     val initializedModel = initialModel.getOrElse(None) match {
       case streaming: StreamingLatentMatrixFactorizationModel =>
-        StreamingLatentMatrixFactorizationModel(rank, userFeatures, prodFeatures,
+        StreamingLatentMatrixFactorizationModel(rank, userFeaturesWithRandom, prodFeaturesWithRandom,
           streaming.globalBias, streaming.observedExamples)
       case _ =>
         if (isStreaming) {
-          StreamingLatentMatrixFactorizationModel(rank, userFeatures, prodFeatures, globalBias, numExamples)
+          StreamingLatentMatrixFactorizationModel(rank, userFeaturesWithRandom, prodFeaturesWithRandom, globalBias, numExamples)
         } else {
           new LatentMatrixFactorizationModel(rank, userFeatures, prodFeatures, globalBias)
         }
