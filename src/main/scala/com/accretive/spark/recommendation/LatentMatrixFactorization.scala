@@ -9,8 +9,8 @@ import org.apache.spark.streaming.dstream.DStream
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.reflect.ClassTag
-
 import com.accretive.spark.optimization.MFGradientDescent
+import org.apache.spark.ml.recommendation.ALSModel
 
 /**
  * Trains a Matrix Factorization Model for Recommendation Systems. The model consists of
@@ -31,7 +31,7 @@ class LatentMatrixFactorization (params: LatentMatrixFactorizationParams) {
 
   protected var model: Option[LatentMatrixFactorizationModel] = None
 
-  def trainOn(ratings: RDD[Rating[Long]]): LatentMatrixFactorizationModel = {
+  def trainOn(initialModel: ALSModel, ratings: RDD[Rating[Long]]): LatentMatrixFactorizationModel = {
     val (initialModel, numExamples) =
       LatentMatrixFactorizationModel.initialize(ratings, params, model, isStreaming = false)
     model = Some(optimizer.train(ratings, initialModel, numExamples))
@@ -116,8 +116,6 @@ class StreamingLatentMatrixFactorization(params: LatentMatrixFactorizationParams
  */
 class LatentMatrixFactorizationParams() {
   private var rank: Int = 20
-  private var minRating: Float = 1f
-  private var maxRating: Float = 5f
   private var stepSize: Double = 1.0
   private var biasStepSize: Double = 1.0
   private var stepDecay: Double = 0.9
@@ -127,8 +125,6 @@ class LatentMatrixFactorizationParams() {
   private var seed: Long = System.currentTimeMillis()
 
   def getRank: Int = rank
-  def getMinRating: Float = minRating
-  def getMaxRating: Float = maxRating
   def getStepSize: Double = stepSize
   def getBiasStepSize: Double = biasStepSize
   def getStepDecay: Double = stepDecay
@@ -140,16 +136,6 @@ class LatentMatrixFactorizationParams() {
   /** The rank of the matrices. Default = 20 */
   def setRank(x: Int): this.type = {
     rank = x
-    this
-  }
-  /** The minimum allowed rating. Default = 1.0 */
-  def setMinRating(x: Float): this.type = {
-    minRating = x
-    this
-  }
-  /** The maximum allowed rating. Default = 5.0 */
-  def setMaxRating(x: Float): this.type = {
-    maxRating = x
     this
   }
   /** The step size to use during Gradient Descent. Default = 0.001 */

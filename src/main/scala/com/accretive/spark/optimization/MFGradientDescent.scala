@@ -2,6 +2,7 @@ package com.accretive.spark.optimization
 
 import com.accretive.spark.recommendation._
 import org.apache.spark.ml.recommendation.ALS.Rating
+import breeze.linalg._
 import org.apache.spark.rdd.RDD
 
 /**
@@ -30,7 +31,7 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
     val rank = params.getRank
 
     for (i <- 0 until iter) {
-      val currentStepSize = stepSize * math.pow(stepDecay, i)
+      val currentStepSize = (stepSize * math.pow(stepDecay, i)).toFloat
       val currentBiasStepSize = biasStepSize * math.pow(stepDecay, i)
       val gradients: RDD[(Long, (Long, Float, LatentFactor))] = ratings.map(r => (r.user, r)).
         join[LatentFactor](userFeatures.map(x => (x.id, x.latent))).
@@ -45,25 +46,25 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
         }.persist(intermediateStorageLevel)
 
       val userGradients: RDD[(Long, LatentFactor)] = grad.map(_._1)
-        .aggregateByKey(LatentFactor(0f, new Array[Float](rank)))(
+        .aggregateByKey(LatentFactor(0f, DenseVector.zeros[Float](rank)))(
           seqOp = (base, example) => base += example,
           combOp = (a, b) => a += b
         )
       val prodGradients: RDD[(Long, LatentFactor)] = grad.map(_._2)
-        .aggregateByKey(LatentFactor(0f, new Array[Float](rank)))(
+        .aggregateByKey(LatentFactor(0f, DenseVector.zeros(rank)))(
           seqOp = (base, example) => base += example,
           combOp = (a, b) => a += b
         )
       val uf = userFeatures.map(x => (x.id, x.latent)).leftOuterJoin[LatentFactor](userGradients)
         userFeatures = uf map {
         case (id, (base: LatentFactor, gradient: Option[LatentFactor])) =>
-        val a = gradient.head.divideAndAdd(base)
+        val a = gradient.head.add(base)
         LatentID(a, id)
       }
       val pf = prodFeatures.map(x => (x.id, x.latent)).leftOuterJoin(prodGradients)
       prodFeatures = pf map {
         case (id, (base: LatentFactor, gradient: Option[LatentFactor])) =>
-          val a = gradient.head.divideAndAdd(base)
+          val a = gradient.head.add(base)
           LatentID(a, id)
       }
     }
@@ -85,7 +86,7 @@ private[spark] object MFGradientDescent extends Serializable {
       userFeatures: LatentID,
       prodFeatures: LatentID,
       bias: Float,
-      stepSize: Double,
+      stepSize: Float,
       biasStepSize: Double,
       lambda: Double): (LatentFactor, LatentFactor) = {
     val predicted = LatentMatrixFactorizationModel.getRating(userFeatures, prodFeatures, bias)
@@ -94,15 +95,34 @@ private[spark] object MFGradientDescent extends Serializable {
     val rank = user.length
     val prod = prodFeatures.latent.vector
 
-    val featureGradients = Array.tabulate(rank) { i =>
-      ((stepSize * (prod(i) * epsilon - lambda * user(i))).toFloat,
-        (stepSize * (user(i) * epsilon - lambda * prod(i))).toFloat)
-    }
+    val uFeatures = stepSize * (user * epsilon - lambda * prod)
+    val pFeatures = stepSize * (prod * epsilon - lambda * user)
+
     val userBiasGrad: Float = (biasStepSize * (epsilon - lambda * userFeatures.latent.bias)).toFloat
     val prodBiasGrad: Float = (biasStepSize * (epsilon - lambda * prodFeatures.latent.bias)).toFloat
 
-    val uFeatures = featureGradients.map(_._1)
-    val pFeatures = featureGradients.map(_._2)
+    (LatentFactor(userBiasGrad, uFeatures), LatentFactor(prodBiasGrad, pFeatures))
+  }
+
+  private[spark] def oneSidedGradientStep(
+                                   rating: Float,
+                                   userFeatures: LatentID,
+                                   prodFeatures: LatentID,
+                                   bias: Float,
+                                   stepSize: Float,
+                                   biasStepSize: Double,
+                                   lambda: Double): (LatentFactor, LatentFactor) = {
+    val predicted = LatentMatrixFactorizationModel.getRating(userFeatures, prodFeatures, bias)
+    val epsilon = rating - predicted
+    val user = userFeatures.latent.vector
+    val rank = user.length
+    val prod = prodFeatures.latent.vector
+
+    val userBiasGrad: Float = (biasStepSize * (epsilon - lambda * userFeatures.latent.bias)).toFloat
+    val prodBiasGrad: Float = (biasStepSize * (epsilon - lambda * prodFeatures.latent.bias)).toFloat
+
+    val uFeatures = stepSize * (prod * epsilon - lambda * user)
+    val pFeatures = stepSize * (user * epsilon - lambda * prod)
     (LatentFactor(userBiasGrad, uFeatures), LatentFactor(prodBiasGrad, pFeatures))
   }
 }

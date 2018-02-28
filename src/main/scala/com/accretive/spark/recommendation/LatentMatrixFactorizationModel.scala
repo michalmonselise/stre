@@ -4,9 +4,9 @@ import java.util.Random
 
 import org.slf4j.{Logger, LoggerFactory}
 import org.apache.spark.ml.recommendation.ALS.Rating
+import org.apache.spark.ml.linalg.Vector
+import breeze.linalg._
 import org.apache.spark.rdd.RDD
-
-import com.accretive.spark.utils.VectorUtils
 
 class LatentMatrixFactorizationModel(
     val rank: Int,
@@ -89,8 +89,8 @@ object LatentMatrixFactorizationModel extends Serializable {
     }
 
     val userFeaturesJoined = usersAndRatings.fullOuterJoin[LatentFactor](userFeatures.map(x => (x.id, x.latent)))
-    val userFeaturesWithRandom = userFeaturesJoined.mapPartitionsWithIndex { case (partitionId, iterator) =>
-        randGenerator.setSeed(seed + 2 << 16 + partitionId)
+    val userFeaturesWithRandom = userFeaturesJoined.mapPartitionsWithIndex {
+      case (partitionId, iterator) =>
         iterator.map { case (user, (rating, uFeatures)) =>
           (user, uFeatures.getOrElse(randGenerator.nextValue()))
         }
@@ -98,7 +98,6 @@ object LatentMatrixFactorizationModel extends Serializable {
 
     val prodFeaturesJoined = productsAndRatings.fullOuterJoin[LatentFactor](prodFeatures.map(x => (x.id, x.latent)))
     val prodFeaturesWithRandom = prodFeaturesJoined.mapPartitionsWithIndex { case (partitionId, iterator) =>
-        randGenerator.setSeed(seed + 2 << 32 + partitionId)
         iterator.map { case (user, (rating, pFeatures)) =>
           (user, pFeatures.getOrElse(randGenerator.nextValue()))
         }
@@ -159,34 +158,32 @@ object LatentMatrixFactorizationModel extends Serializable {
       userFeatures: LatentID,
       prodFeatures: LatentID,
       bias: Float): Float = {
-    val dot = VectorUtils.dot(userFeatures.latent.vector, prodFeatures.latent.vector)
+    val dot = userFeatures.latent.vector dot prodFeatures.latent.vector
     dot + userFeatures.latent.bias + prodFeatures.latent.bias + bias
   }
 }
 
-case class LatentFactor(var bias: Float, vector: Array[Float]) extends Serializable {
+case class LatentFactor(var bias: Float, vector: breeze.linalg.DenseVector[Float]) extends Serializable {
 
   def +=(other: LatentFactor): this.type = {
-    bias += other.bias
-    VectorUtils.addInto(vector, other.vector)
-    this
+    val resBias = bias + other.bias
+    val resVector = vector + other.vector
+    LatentFactor(resBias, resVector)
   }
 
-  def divideAndAdd(other: LatentFactor): this.type = {
-    bias += other.bias
-    VectorUtils.addInto(vector, other.vector)
-    this
+  def add(other: LatentFactor): this.type = {
+    this += other
   }
 
   override def toString: String = {
-    s"bias: $bias, factors: " + vector.mkString(", ")
+    s"bias: $bias, factors: " + vector.toString
   }
 }
 
 case class LatentID(var latent: LatentFactor, id: Long) extends Serializable {
 
   override def toString: String = {
-    s"id: $id.toString, Factors: " + latent.vector.mkString(", ")
+    s"id: $id.toString, Factors: " + latent.vector.toString
   }
 }
 
@@ -195,8 +192,6 @@ class LatentFactorGenerator(rank: Int) extends Serializable {
   private val random = new java.util.Random()
 
   def nextValue(): LatentFactor = {
-    LatentFactor(random.nextFloat, Array.tabulate(rank)(i => random.nextFloat))
+    LatentFactor(random.nextFloat, randomDouble(rank).map(x => x.toFloat))
   }
-
-  def setSeed(seed: Long): Unit = random.setSeed(seed)
 }
