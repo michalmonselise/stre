@@ -2,6 +2,7 @@ package com.accretive.spark.optimization
 
 import com.accretive.spark.recommendation._
 import org.apache.spark.ml.recommendation.ALS.Rating
+import org.apache.spark.ml.recommendation.ALSModel
 import breeze.linalg._
 import org.apache.spark.rdd.RDD
 
@@ -16,12 +17,13 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
 
   def train(
       ratings: RDD[Rating[Long]],
-      initialModel: LatentMatrixFactorizationModel,
+      initialModel: ALSModel,
+      initialLatentModel: LatentMatrixFactorizationModel,
       numExamples: Long): LatentMatrixFactorizationModel = {
 
-    var userFeatures = initialModel.userFeatures
-    var prodFeatures = initialModel.productFeatures
-    val globalBias = initialModel.globalBias
+    var userFeatures: RDD[LatentID] = initialLatentModel.userFeatures
+    var prodFeatures = initialModel.itemFactors.rdd.map(x => LatentID(x._2, x._1.toLong))
+    val globalBias = initialLatentModel.globalBias
     val lambda = params.getLambda
     val stepSize = params.getStepSize
     val stepDecay = params.getStepDecay

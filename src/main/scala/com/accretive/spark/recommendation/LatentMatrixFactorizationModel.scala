@@ -194,6 +194,6 @@ class LatentFactorGenerator(rank: Int) extends Serializable {
   private val random = new java.util.Random()
 
   def nextValue(): LatentFactor = {
-    LatentFactor(random.nextFloat, randomDouble(rank).map(x => x.toFloat))
+    LatentFactor(random.nextFloat, breeze.linalg.randomDouble(rank).map(x => x.toFloat))
   }
 }
