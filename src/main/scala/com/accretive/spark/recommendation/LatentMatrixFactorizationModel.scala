@@ -4,9 +4,9 @@ import java.util.Random
 
 import org.slf4j.{Logger, LoggerFactory}
 import org.apache.spark.ml.recommendation.ALS.Rating
-import org.apache.spark.ml.linalg.Vector
 import breeze.linalg._
 import org.apache.spark.rdd.RDD
+import org.apache.spark.ml.recommendation.ALSModel
 
 class LatentMatrixFactorizationModel(
     val rank: Int,
@@ -65,7 +65,8 @@ object LatentMatrixFactorizationModel extends Serializable {
   def initialize(
       ratings: RDD[Rating[Long]],
       params: LatentMatrixFactorizationParams,
-      initialModel: Option[LatentMatrixFactorizationModel],
+      initialModel: ALSModel,
+      initialLatentModel: Option[LatentMatrixFactorizationModel],
       isStreaming: Boolean = false): (LatentMatrixFactorizationModel, Long) = {
     val rank = params.getRank
     val seed = params.getSeed
@@ -76,13 +77,13 @@ object LatentMatrixFactorizationModel extends Serializable {
     val usersAndRatings: RDD[(Long, Rating[Long])] = ratings.map(r => (r.user, r))
     val productsAndRatings: RDD[(Long, Rating[Long])] = ratings.map(r => (r.item, r))
     val sc = ratings.sparkContext
-    var userFeatures: RDD[LatentID] = initialModel match {
+    var userFeatures: RDD[LatentID] = initialLatentModel match {
       case Some(model) => model.userFeatures
       case None =>
         sc.parallelize(Seq.empty[(Long, LatentFactor)], ratings.partitions.length).map(x => LatentID(x._2, x._1))
     }
 
-    var prodFeatures: RDD[LatentID] = initialModel match {
+    var prodFeatures: RDD[LatentID] = initialLatentModel match {
       case Some(model) => model.productFeatures
       case None =>
         sc.parallelize(Seq.empty[(Long, LatentFactor)], ratings.partitions.length).map(x => LatentID(x._2, x._1))

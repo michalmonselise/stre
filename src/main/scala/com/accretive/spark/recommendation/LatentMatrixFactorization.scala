@@ -32,9 +32,9 @@ class LatentMatrixFactorization (params: LatentMatrixFactorizationParams) {
   protected var model: Option[LatentMatrixFactorizationModel] = None
 
   def trainOn(initialModel: ALSModel, ratings: RDD[Rating[Long]]): LatentMatrixFactorizationModel = {
-    val (initialModel, numExamples) =
-      LatentMatrixFactorizationModel.initialize(ratings, params, model, isStreaming = false)
-    model = Some(optimizer.train(ratings, initialModel, numExamples))
+    val (initialLatentModel, numExamples) =
+      LatentMatrixFactorizationModel.initialize(ratings, params,initialModel, model, isStreaming = true)
+    model = Some(optimizer.train(ratings, initialModel, initialLatentModel, numExamples))
     model.get
   }
 

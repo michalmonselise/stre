@@ -38,34 +38,23 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
         map { case (user, (rating, uFeatures)) =>
           (rating.item, (user, rating.rating, uFeatures))
         }
-      val grad: RDD[((Long, LatentFactor), (Long, LatentFactor))] = gradients.join[LatentFactor](prodFeatures.map(x => (x.id, x.latent))).
+      val grad: RDD[(Long, LatentFactor)] = gradients.join[LatentFactor](prodFeatures.map(x => (x.id, x.latent))).
         map { case (item, ((user, rating, uFeatures), pFeatures)) =>
-          val step = MFGradientDescent.gradientStep(rating, LatentID(uFeatures, user), LatentID(pFeatures, item),
+          val step = MFGradientDescent.oneSidedGradientStep(rating, LatentID(uFeatures, user), LatentID(pFeatures, item),
             globalBias, currentStepSize, currentBiasStepSize, lambda)
-          ((user, step._1), (item, step._2))
+          (user, step)
         }.persist(intermediateStorageLevel)
 
-      val userGradients: RDD[(Long, LatentFactor)] = grad.map(_._1)
-        .aggregateByKey(LatentFactor(0f, DenseVector.zeros[Float](rank)))(
+      val userGradients: RDD[(Long, LatentFactor)] = grad.aggregateByKey(LatentFactor(0f, DenseVector.zeros[Float](rank)))(
           seqOp = (base, example) => base += example,
           combOp = (a, b) => a += b
         )
-      val prodGradients: RDD[(Long, LatentFactor)] = grad.map(_._2)
-        .aggregateByKey(LatentFactor(0f, DenseVector.zeros(rank)))(
-          seqOp = (base, example) => base += example,
-          combOp = (a, b) => a += b
-        )
+
       val uf = userFeatures.map(x => (x.id, x.latent)).leftOuterJoin[LatentFactor](userGradients)
         userFeatures = uf map {
         case (id, (base: LatentFactor, gradient: Option[LatentFactor])) =>
         val a = gradient.head.add(base)
         LatentID(a, id)
-      }
-      val pf = prodFeatures.map(x => (x.id, x.latent)).leftOuterJoin(prodGradients)
-      prodFeatures = pf map {
-        case (id, (base: LatentFactor, gradient: Option[LatentFactor])) =>
-          val a = gradient.head.add(base)
-          LatentID(a, id)
       }
     }
     initialModel match {
@@ -111,18 +100,16 @@ private[spark] object MFGradientDescent extends Serializable {
                                    bias: Float,
                                    stepSize: Float,
                                    biasStepSize: Double,
-                                   lambda: Double): (LatentFactor, LatentFactor) = {
+                                   lambda: Double): LatentFactor = {
     val predicted = LatentMatrixFactorizationModel.getRating(userFeatures, prodFeatures, bias)
     val epsilon = rating - predicted
     val user = userFeatures.latent.vector
     val rank = user.length
     val prod = prodFeatures.latent.vector
 
-    val userBiasGrad: Float = (biasStepSize * (epsilon - lambda * userFeatures.latent.bias)).toFloat
-    val prodBiasGrad: Float = (biasStepSize * (epsilon - lambda * prodFeatures.latent.bias)).toFloat
-
     val uFeatures = stepSize * (prod * epsilon - lambda * user)
-    val pFeatures = stepSize * (user * epsilon - lambda * prod)
-    (LatentFactor(userBiasGrad, uFeatures), LatentFactor(prodBiasGrad, pFeatures))
+    val userBiasGrad: Float = (biasStepSize * (epsilon - lambda * userFeatures.latent.bias)).toFloat
+
+    LatentFactor(userBiasGrad, uFeatures)
   }
 }
