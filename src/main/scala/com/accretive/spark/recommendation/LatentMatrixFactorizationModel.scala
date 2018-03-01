@@ -107,14 +107,14 @@ object LatentMatrixFactorizationModel extends Serializable {
     val (ratingSum, numRatings) =
       ratings.map(r => (r.rating, 1L)).reduce((a, b) => (a._1 + b._1, a._2 + b._2))
 
-    val (globalBias, numExamples) = initialModel.getOrElse(None) match {
+    val (globalBias, numExamples) = initialLatentModel.getOrElse(None) match {
       case streaming: StreamingLatentMatrixFactorizationModel =>
         val examples: Long = streaming.observedExamples + numRatings
         ((streaming.globalBias * streaming.observedExamples + ratingSum) / examples, examples)
       case _ => (ratingSum / numRatings, numRatings)
     }
 
-    val initializedModel = initialModel.getOrElse(None) match {
+    val initializedModel = initialLatentModel.getOrElse(None) match {
       case streaming: StreamingLatentMatrixFactorizationModel =>
         StreamingLatentMatrixFactorizationModel(rank, userFeaturesWithRandom, prodFeaturesWithRandom,
           streaming.globalBias, streaming.observedExamples)
@@ -164,16 +164,17 @@ object LatentMatrixFactorizationModel extends Serializable {
   }
 }
 
-case class LatentFactor(var bias: Float, vector: breeze.linalg.DenseVector[Float]) extends Serializable {
+case class LatentFactor(var bias: Float, var vector: breeze.linalg.DenseVector[Float]) extends Serializable {
 
   def +=(other: LatentFactor): this.type = {
-    val resBias = bias + other.bias
-    val resVector = vector + other.vector
-    LatentFactor(resBias, resVector)
+    this.vector =  vector + other.vector
+    this.bias = bias + other.bias
+    this
   }
 
   def add(other: LatentFactor): this.type = {
     this += other
+    this
   }
 
   override def toString: String = {
