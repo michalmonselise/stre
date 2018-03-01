@@ -22,7 +22,7 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
       numExamples: Long): LatentMatrixFactorizationModel = {
 
     var userFeatures: RDD[LatentID] = initialLatentModel.userFeatures
-    var prodFeatures = initialModel.itemFactors.rdd.map(x => LatentID(x._2, x._1.toLong))
+    var prodFeatures = initialModel.itemFactors.rdd.map(x => LatentID(x.getString(2).to, x.getString(1).toLong))
     val globalBias = initialLatentModel.globalBias
     val lambda = params.getLambda
     val stepSize = params.getStepSize
