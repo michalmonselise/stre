@@ -11,6 +11,7 @@ import org.slf4j.{Logger, LoggerFactory}
 import scala.reflect.ClassTag
 import com.accretive.spark.optimization.MFGradientDescent
 import org.apache.spark.ml.recommendation.ALSModel
+import org.apache.spark.sql.DataFrame
 
 /**
  * Trains a Matrix Factorization Model for Recommendation Systems. The model consists of
@@ -22,6 +23,9 @@ import org.apache.spark.ml.recommendation.ALSModel
  *
  * @param params Parameters for training
  */
+
+
+
 class LatentMatrixFactorization (params: LatentMatrixFactorizationParams) {
 
   val log: Logger = LoggerFactory.getLogger(this.getClass)
@@ -31,11 +35,10 @@ class LatentMatrixFactorization (params: LatentMatrixFactorizationParams) {
 
   protected var model: Option[LatentMatrixFactorizationModel] = None
 
-  def trainOn(initialModel: ALSModel, ratings: RDD[Rating[Long]]): LatentMatrixFactorizationModel = {
-    val (initialLatentModel, numExamples) =
-      LatentMatrixFactorizationModel.initialize(ratings, params,initialModel, model, isStreaming = true)
-    model = Some(optimizer.train(ratings, initialModel, initialLatentModel, numExamples))
-    model.get
+  def trainOn(userFactors: DataFrame, itemFactors: DataFrame, ratings: RDD[Rating[Long]], globalBias: Float, rank: Int):
+  Some[DataFrame] = {
+    val items = Some(optimizer.train(userFactors, itemFactors, ratings, globalBias, rank))
+    items
   }
 
   /** Java-friendly version of `trainOn`. */
@@ -100,11 +103,11 @@ class StreamingLatentMatrixFactorization(params: LatentMatrixFactorizationParams
    *
    * @param data DStream containing Ratings
    */
-  def trainOn(data: DStream[Rating[Long]]): Unit = {
+  def trainOn(initialModel: ALSModel, data: DStream[Rating[Long]]): Unit = {
     data.foreachRDD { (rdd, time) =>
-      val (initialModel, numExamples) =
-        LatentMatrixFactorizationModel.initialize(rdd, params, model, isStreaming = true)
-      model = Some(optimizer.train(rdd, initialModel, numExamples).
+      val (initialLatentModel, numExamples) =
+        LatentMatrixFactorizationModel.initialize(rdd, params, initialModel, model, isStreaming = true)
+      model = Some(optimizer.train(rdd, initialModel, initialLatentModel, numExamples).
         asInstanceOf[StreamingLatentMatrixFactorizationModel])
       log.info(s"Model updated at time $time")
     }

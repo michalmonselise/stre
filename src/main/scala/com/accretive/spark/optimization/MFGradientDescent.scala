@@ -1,10 +1,13 @@
 package com.accretive.spark.optimization
 
+import breeze.linalg
 import com.accretive.spark.recommendation._
 import org.apache.spark.ml.recommendation.ALS.Rating
 import org.apache.spark.ml.recommendation.ALSModel
 import breeze.linalg._
+import org.apache.spark.sql.Row
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.DataFrame
 
 /**
  * A Gradient Descent Optimizer specialized for Matrix Factorization.
@@ -16,14 +19,14 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
   def this() = this(new LatentMatrixFactorizationParams)
 
   def train(
-      ratings: RDD[Rating[Long]],
-      initialModel: ALSModel,
-      initialLatentModel: LatentMatrixFactorizationModel,
-      numExamples: Long): LatentMatrixFactorizationModel = {
+           userFactors: DataFrame,
+           itemFactors: DataFrame,
+           ratings: RDD[Rating[Long]],
+           globalBias: Float,
+           rank: Int): DataFrame = {
 
-    var userFeatures: RDD[LatentID] = initialLatentModel.userFeatures
-    var prodFeatures = initialModel.itemFactors.rdd.map(x => LatentID(x.getString(2).to, x.getString(1).toLong))
-    val globalBias = initialLatentModel.globalBias
+    var prodFeatures = itemFactors.rdd.map{ case Row(id: Long, value: Array[Float]) =>
+      LatentID(LatentFactor(0, DenseVector(value)), id)}
     val lambda = params.getLambda
     val stepSize = params.getStepSize
     val stepDecay = params.getStepDecay

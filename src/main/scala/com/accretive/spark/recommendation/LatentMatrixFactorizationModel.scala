@@ -159,8 +159,8 @@ object LatentMatrixFactorizationModel extends Serializable {
       userFeatures: LatentID,
       prodFeatures: LatentID,
       bias: Float): Float = {
-    val dot = userFeatures.latent.vector dot prodFeatures.latent.vector
-    dot + userFeatures.latent.bias + prodFeatures.latent.bias + bias
+    val dotProd = userFeatures.latent.vector dot prodFeatures.latent.vector
+    dotProd + userFeatures.latent.bias + prodFeatures.latent.bias + bias
   }
 }
 
