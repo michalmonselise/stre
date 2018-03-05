@@ -35,7 +35,7 @@ class LatentMatrixFactorization (params: LatentMatrixFactorizationParams) {
 
   protected var model: Option[LatentMatrixFactorizationModel] = None
 
-  def trainOn(userFactors: DataFrame, itemFactors: DataFrame, ratings: RDD[Rating[Long]], globalBias: Float, rank: Int):
+  def trainOn(userFactors: DataFrame, itemFactors: DataFrame, ratings: DataFrame, globalBias: Float, rank: Int):
   Some[DataFrame] = {
     val items = Some(optimizer.train(userFactors, itemFactors, ratings, globalBias, rank))
     items
