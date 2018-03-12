@@ -16,7 +16,7 @@ import org.apache.spark.sql.functions.udf
  *
  * @param params The parameters to use
  */
-private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) {
+class MFGradientDescent(params: LatentMatrixFactorizationParams) {
 
   def this() = this(new LatentMatrixFactorizationParams)
 
@@ -24,10 +24,10 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
            userFactors: DataFrame,
            itemFactors: DataFrame,
            ratings: DataFrame,
-           globalBias: Float,
+           globalBias: Double,
            rank: Int): DataFrame = {
 
-    val lambda = params.getLambda.toFloat
+    val lambda = params.getLambda.toDouble
     val stepSize = params.getStepSize
     val stepDecay = params.getStepDecay
     val biasStepSize = params.getBiasStepSize
@@ -36,16 +36,18 @@ private[spark] class MFGradientDescent(params: LatentMatrixFactorizationParams) 
     val rank = params.getRank
 
     for (i <- 0 until iter) {
-      val currentStepSize = (stepSize * math.pow(stepDecay, i)).toFloat
+      val currentStepSize = (stepSize * math.pow(stepDecay, i))
       val currentBiasStepSize = biasStepSize * math.pow(stepDecay, i)
       val userFactorsRenamed = userFactors.withColumnRenamed("features", "userFeatures")
       val itemFactorsRenamed = itemFactors.withColumnRenamed("features", "itemFeatures")
       val gradients = ratings.join(userFactorsRenamed, ratings.col("userid") === userFactors("id")).drop("id").drop("lastSpendDate")
       val grad = gradients.join(itemFactorsRenamed, gradients.col("performerid") === itemFactors.col("id")).drop("id")
-      val step = grad.map(x =>
-        MFGradientDescent.oneSidedGradientStep(x, globalBias, currentStepSize, currentBiasStepSize, lambda))
+      val step = grad.rdd.map(x => (x.getLong(0), x.getLong(1), x.getDouble(2), x.getList(3).toArray.map(_.toString.toDouble)
+          , x.getList(4).toArray.map(_.toString.toDouble)))
+      val step2 = step.map(x =>
+        MFGradientDescent.oneSidedGradientStep(x._1, x._2, x._3, x._4, x._5, globalBias, currentStepSize, currentBiasStepSize, lambda))
       val stepDF = step.toDF("userid", "performerid", "amount", "userFeatures", "userBiasGrad", "itemFeatures")
-      val userGradients = stepDF.aggregateByKey(LatentFactor(0f, DenseVector.zeros[Float](rank)))(
+      val userGradients = stepDF.aggregateByKey(LatentFactor(0f, DenseVector.zeros[Double](rank)))(
           seqOp = (base, example) => base += example,
           combOp = (a, b) => a += b
         )
@@ -66,8 +68,8 @@ private[spark] object MFGradientDescent extends Serializable {
 
   // Exposed for testing
 //  private[spark] def gradientStep(x: Row,
-//      bias: Float,
-//      stepSize: Float,
+//      bias: Double,
+//      stepSize: Double,
 //      biasStepSize: Double,
 //      lambda: Double): Row = {
 //    val predicted = LatentMatrixFactorizationModel.getRating(userFeatures, prodFeatures, bias)
@@ -79,39 +81,40 @@ private[spark] object MFGradientDescent extends Serializable {
 //    val uFeatures = stepSize * (user * epsilon - lambda * prod)
 //    val pFeatures = stepSize * (prod * epsilon - lambda * user)
 //
-//    val userBiasGrad: Float = (biasStepSize * (epsilon - lambda * userFeatures.latent.bias)).toFloat
-//    val prodBiasGrad: Float = (biasStepSize * (epsilon - lambda * prodFeatures.latent.bias)).toFloat
+//    val userBiasGrad: Double = (biasStepSize * (epsilon - lambda * userFeatures.latent.bias)).toDouble
+//    val prodBiasGrad: Double = (biasStepSize * (epsilon - lambda * prodFeatures.latent.bias)).toDouble
 //
 //    (LatentFactor(userBiasGrad, uFeatures), LatentFactor(prodBiasGrad, pFeatures))
 //  }
 
-  def oneSidedGradientStep(x: Row,
-                           bias: Float,
-                           stepSize: Float,
+  def oneSidedGradientStep(userid: Long,
+                           performerid: Long,
+                           amount: Double,
+                           userFeatures: Array[Double],
+                           prodFeatures: Array[Double],
+                           bias:Double,
+                           globalBias: Double,
+                           stepSize: Double,
                            biasStepSize: Double,
-                           lambda: Float): Row = {
-    val (userid, performerid, amount, userFeatures, bias, prodFeatures): (Long, Long, Float, Array[Float], Float, Array[Float]) =
-      (x.getLong(0), x.getLong(1), x.getFloat(2), x.getList(3).toArray.map(_.toString.toFloat),
-        x.getFloat(4), x.getList(5).toArray.map(_.toString.toFloat))
-    val predicted: Float = getRating(x, bias)
-    val epsilon: Float = amount - predicted
-    val user: DenseVector[Float] = DenseVector(userFeatures)
+                           lambda: Double): Row = {
+    val predicted: Double = getRating(userFeatures, prodFeatures, bias, globalBias)
+    val epsilon: Double = amount - predicted
+    val user: DenseVector[Double] = DenseVector(userFeatures)
     val rank = user.length
-    val prod: DenseVector[Float] = DenseVector(prodFeatures)
+    val prod: DenseVector[Double] = DenseVector(prodFeatures)
 
     val uFeatures = stepSize * (prod * epsilon - lambda * user)
-    val userBiasGrad: Float = (biasStepSize * (epsilon - lambda * bias)).toFloat
+    val userBiasGrad: Double = (biasStepSize * (epsilon - lambda * bias))
 
     Row(userid, performerid, amount, uFeatures, userBiasGrad, prodFeatures)
   }
 
-  def getRating(x: Row,
-                globalBias: Float): Float = {
-    val (userid, performerid, amount, userFeatures, bias, prodFeatures): (Long, Long, Float, Array[Float], Float, Array[Float]) =
-      (x.getLong(0), x.getLong(1), x.getFloat(2), x.getList(3).toArray.map(_.toString.toFloat),
-        x.getFloat(4), x.getList(5).toArray.map(_.toString.toFloat))
-    val uFeatures: DenseVector[Float] = DenseVector(userFeatures)
-    val pFeatures: DenseVector[Float] = DenseVector(prodFeatures)
+  def getRating(userFeatures: Array[Double],
+                prodFeatures: Array[Double],
+                bias: Double,
+                globalBias: Double): Double = {
+    val uFeatures: DenseVector[Double] = DenseVector(userFeatures)
+    val pFeatures: DenseVector[Double] = DenseVector(prodFeatures)
     val dotProd = uFeatures dot pFeatures
     dotProd + bias + globalBias
   }

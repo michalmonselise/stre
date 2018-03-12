@@ -12,11 +12,11 @@ class LatentMatrixFactorizationModel(
     val rank: Int,
     val userFeatures: RDD[LatentID], // bias and the user row
     val productFeatures: RDD[LatentID], // bias and the product row
-    val globalBias: Float) {
+    val globalBias: Double) {
 
   val log: Logger = LoggerFactory.getLogger(this.getClass)
   /** Predict the rating of one user for one product. */
-  def predict(user: Long, product: Long): Float = {
+  def predict(user: Long, product: Long): Double = {
     val uFeatures: Option[LatentID] = userFeatures.filter(u => u.id == user).collect().headOption
     val pFeatures: Option[LatentID] = productFeatures.filter(p => p.id == product).collect().headOption
     LatentMatrixFactorizationModel.predict(uFeatures, pFeatures, globalBias).rating
@@ -51,7 +51,7 @@ case class StreamingLatentMatrixFactorizationModel(
     override val rank: Int,
     override val userFeatures: RDD[LatentID], // bias and the user row
     override val productFeatures: RDD[LatentID], // bias and the product row
-    override val globalBias: Float,
+    override val globalBias: Double,
     observedExamples: Long)
   extends LatentMatrixFactorizationModel(rank, userFeatures, productFeatures, globalBias)
 
@@ -131,7 +131,7 @@ object LatentMatrixFactorizationModel extends Serializable {
   def predict(
       uFeatures: Option[LatentID],
       pFeatures: Option[LatentID],
-      globalBias: Float): Rating[Long] = {
+      globalBias: Double): Rating[Long] = {
     val user = uFeatures.head.id
     val product = pFeatures.head.id
     val finalRating =
@@ -158,13 +158,13 @@ object LatentMatrixFactorizationModel extends Serializable {
   def getRating(
       userFeatures: LatentID,
       prodFeatures: LatentID,
-      bias: Float): Float = {
+      bias: Double): Double = {
     val dotProd = userFeatures.latent.vector dot prodFeatures.latent.vector
     dotProd + userFeatures.latent.bias + prodFeatures.latent.bias + bias
   }
 }
 
-case class LatentFactor(var bias: Float, var vector: breeze.linalg.DenseVector[Float]) extends Serializable {
+case class LatentFactor(var bias: Double, var vector: breeze.linalg.DenseVector[Double]) extends Serializable {
 
   def +=(other: LatentFactor): this.type = {
     this.vector =  vector + other.vector
@@ -194,6 +194,6 @@ class LatentFactorGenerator(rank: Int) extends Serializable {
   private val random = new java.util.Random()
 
   def nextValue(): LatentFactor = {
-    LatentFactor(random.nextFloat, breeze.linalg.randomDouble(rank).map(x => x.toFloat))
+    LatentFactor(random.nextDouble, breeze.linalg.randomDouble(rank).map(x => x.toDouble))
   }
 }

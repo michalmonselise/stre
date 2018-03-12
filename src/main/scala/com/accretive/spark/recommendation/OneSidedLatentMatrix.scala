@@ -9,39 +9,50 @@ import com.accretive.spark.recommendation.LatentMatrixFactorizationModel.log
 import org.apache.spark.sql.Row
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.Column
 
 class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
   protected val optimizer = new MFGradientDescent(params)
 
   def trainOn(userFactors: DataFrame, itemFactors: DataFrame, ratings: DataFrame,
-              globalBias: Float, rank: Int): Some[DataFrame] = {
-    val items = Some(optimizer.train(userFactors, itemFactors, ratings, globalBias, rank))
-    items
+              globalBias: Double, rank: Int): Some[DataFrame] = {
+    val userFactorsBias: DataFrame = if (!userFactors.columns.contains("bias"))
+      userFactors.withColumn("bias", rand()) else userFactors
+    val usersDf: DataFrame = ratings.select("userid").except(userFactorsBias.select("id"))
+    val usersFactorsNew: DataFrame = makeNew(userFactorsBias, params.getRank)
+    val users = Some(optimizer.train(userFactorsBias, itemFactors, ratings, globalBias, rank))
+    users
   }
 
-  def predict(x: Row,
-               globalBias: Float): Row = {
-    val (userid, performerid, amount, userFeatures, bias, prodFeatures): (Long, Long, Float, Array[Float], Float, Array[Float]) =
-      (x.getLong(0), x.getLong(1), x.getFloat(2), x.getList(3).toArray.map(_.toString.toFloat),
-        x.getFloat(4), x.getList(5).toArray.map(_.toString.toFloat))
+  def predict(userid: Long,
+              performerid: Long,
+              userFactors: Some[Array[Double]],
+              itemFactors:Some[Array[Double]],
+              ratings: DataFrame,
+              bias: Double,
+              globalBias: Double): (Long, Long, Double) = {
     val finalRating =
-      if (userFeatures.isDefined && prodFeatures.isDefined) {
-        Rating(user, product, LatentMatrixFactorizationModel.getRating(uFeatures.get, pFeatures.get,
-          globalBias))
-      } else if (uFeatures.isDefined) {
-        log.warn(s"Product data missing for product id $product. Will use user factors.")
-        val rating = globalBias + uFeatures.get.latent.bias
-        Rating(user, product, 0f)
-      } else if (pFeatures.isDefined) {
-        log.warn(s"User data missing for user id $user. Will use product factors.")
-        val rating = globalBias + pFeatures.get.latent.bias
-        Rating(user, product, 0f)
+      if (userFactors.isDefined && itemFactors.isDefined) {
+        (userid, performerid, MFGradientDescent.getRating(userFactors.head, itemFactors.head, bias, globalBias))
+      } else if (userFactors.isDefined) {
+        log.warn(s"Product data missing for product id $performerid. Will use user factors.")
+        val rating = globalBias + bias
+        (userid, performerid, 0.0)
+      } else if (itemFactors.isDefined) {
+        log.warn(s"User data missing for user id $userid. Will use product factors.")
+        val rating = globalBias + bias
+        (userid, performerid, 0.0)
       } else {
-        log.warn(s"Both user and product factors missing for ($user, $product). " +
+        log.warn(s"Both user and product factors missing for ($userid, $performerid). " +
           "Returning global average.")
         val rating = globalBias
-        Rating(user, product, 0f)
+        (userid, performerid, 0.0)
       }
     finalRating
   }
+  def makeNew(df: DataFrame, rank: Int): DataFrame = {
+    df.withColumn("features", ).withColumn("bias", rand())
+  }
 }
+
