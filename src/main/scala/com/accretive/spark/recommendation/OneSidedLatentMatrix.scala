@@ -11,16 +11,27 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.Column
+import org.apache.spark.ml.feature.VectorAssembler
+import org.apache.spark.ml.linalg.Vectors
+import org.apache.spark.sql.functions.udf
 
 class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
   protected val optimizer = new MFGradientDescent(params)
 
   def trainOn(userFactors: DataFrame, itemFactors: DataFrame, ratings: DataFrame,
               globalBias: Double, rank: Int): Some[DataFrame] = {
-    val userFactorsBias: DataFrame = if (!userFactors.columns.contains("bias"))
+    var userFactorsBias: DataFrame = if (!userFactors.columns.contains("bias"))
       userFactors.withColumn("bias", rand()) else userFactors
-    val usersDf: DataFrame = ratings.select("userid").except(userFactorsBias.select("id"))
-    val usersFactorsNew: DataFrame = makeNew(userFactorsBias, params.getRank)
+    userFactorsBias = userFactorsBias.withColumnRenamed("features", "userFeatures")
+    val usersDf: DataFrame = ratings.select("userid").withColumnRenamed("userid", "id").except(userFactorsBias.select("id"))
+    var usersFactorsNew: DataFrame = makeNew(usersDf, params.getRank)
+    val toArr: org.apache.spark.ml.linalg.Vector => Array[Double] = _.toArray
+    val toArrUdf =udf(toArr)
+    val toDoub: Array[Float] => Array[Double] = _.map(x => x.toDouble)
+    val toDoubUdf = udf(toDoub)
+    userFactorsBias = userFactorsBias.withColumn("userFeatures", toDoubUdf(userFactorsBias.col("userFeatures")))
+    usersFactorsNew = usersFactorsNew.withColumn("userFeatures", toArrUdf(usersFactorsNew.col("userFeatures")))
+    userFactorsBias = userFactorsBias.union(usersFactorsNew)
     val users = Some(optimizer.train(userFactorsBias, itemFactors, ratings, globalBias, rank))
     users
   }
@@ -52,7 +63,18 @@ class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
     finalRating
   }
   def makeNew(df: DataFrame, rank: Int): DataFrame = {
-    df.withColumn("features", ).withColumn("bias", rand())
+    var df_dummy = df
+    var i: Int = 0
+    var inputCols: Array[String] = Array()
+    for (i <- 0 to rank) {
+      df_dummy = df_dummy.withColumn("feature".concat(i.toString), rand())
+      inputCols = inputCols :+ "feature".concat(i.toString)
+    }
+    val assembler = new VectorAssembler()
+      .setInputCols(inputCols)
+      .setOutputCol("userFeatures")
+    val output = assembler.transform(df_dummy)
+    output.withColumn("bias", rand()).select("id", "userFeatures", "bias")
   }
 }
 
