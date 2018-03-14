@@ -4,19 +4,20 @@ import java.util.Random
 
 import org.slf4j.{Logger, LoggerFactory}
 import org.apache.spark.ml.recommendation.ALS.Rating
+import org.apache.spark.ml.linalg.Vector
 import breeze.linalg._
+import com.accretive.spark.utils.VectorUtils
 import org.apache.spark.rdd.RDD
-import org.apache.spark.ml.recommendation.ALSModel
 
 class LatentMatrixFactorizationModel(
     val rank: Int,
     val userFeatures: RDD[LatentID], // bias and the user row
     val productFeatures: RDD[LatentID], // bias and the product row
-    val globalBias: Double) {
+    val globalBias: Float) {
 
   val log: Logger = LoggerFactory.getLogger(this.getClass)
   /** Predict the rating of one user for one product. */
-  def predict(user: Long, product: Long): Double = {
+  def predict(user: Long, product: Long): Float = {
     val uFeatures: Option[LatentID] = userFeatures.filter(u => u.id == user).collect().headOption
     val pFeatures: Option[LatentID] = productFeatures.filter(p => p.id == product).collect().headOption
     LatentMatrixFactorizationModel.predict(uFeatures, pFeatures, globalBias).rating
@@ -51,7 +52,7 @@ case class StreamingLatentMatrixFactorizationModel(
     override val rank: Int,
     override val userFeatures: RDD[LatentID], // bias and the user row
     override val productFeatures: RDD[LatentID], // bias and the product row
-    override val globalBias: Double,
+    override val globalBias: Float,
     observedExamples: Long)
   extends LatentMatrixFactorizationModel(rank, userFeatures, productFeatures, globalBias)
 
@@ -65,8 +66,7 @@ object LatentMatrixFactorizationModel extends Serializable {
   def initialize(
       ratings: RDD[Rating[Long]],
       params: LatentMatrixFactorizationParams,
-      initialModel: ALSModel,
-      initialLatentModel: Option[LatentMatrixFactorizationModel],
+      initialModel: Option[LatentMatrixFactorizationModel],
       isStreaming: Boolean = false): (LatentMatrixFactorizationModel, Long) = {
     val rank = params.getRank
     val seed = params.getSeed
@@ -77,13 +77,13 @@ object LatentMatrixFactorizationModel extends Serializable {
     val usersAndRatings: RDD[(Long, Rating[Long])] = ratings.map(r => (r.user, r))
     val productsAndRatings: RDD[(Long, Rating[Long])] = ratings.map(r => (r.item, r))
     val sc = ratings.sparkContext
-    var userFeatures: RDD[LatentID] = initialLatentModel match {
+    var userFeatures: RDD[LatentID] = initialModel match {
       case Some(model) => model.userFeatures
       case None =>
         sc.parallelize(Seq.empty[(Long, LatentFactor)], ratings.partitions.length).map(x => LatentID(x._2, x._1))
     }
 
-    var prodFeatures: RDD[LatentID] = initialLatentModel match {
+    var prodFeatures: RDD[LatentID] = initialModel match {
       case Some(model) => model.productFeatures
       case None =>
         sc.parallelize(Seq.empty[(Long, LatentFactor)], ratings.partitions.length).map(x => LatentID(x._2, x._1))
@@ -107,14 +107,14 @@ object LatentMatrixFactorizationModel extends Serializable {
     val (ratingSum, numRatings) =
       ratings.map(r => (r.rating, 1L)).reduce((a, b) => (a._1 + b._1, a._2 + b._2))
 
-    val (globalBias, numExamples) = initialLatentModel.getOrElse(None) match {
+    val (globalBias, numExamples) = initialModel.getOrElse(None) match {
       case streaming: StreamingLatentMatrixFactorizationModel =>
         val examples: Long = streaming.observedExamples + numRatings
         ((streaming.globalBias * streaming.observedExamples + ratingSum) / examples, examples)
       case _ => (ratingSum / numRatings, numRatings)
     }
 
-    val initializedModel = initialLatentModel.getOrElse(None) match {
+    val initializedModel = initialModel.getOrElse(None) match {
       case streaming: StreamingLatentMatrixFactorizationModel =>
         StreamingLatentMatrixFactorizationModel(rank, userFeaturesWithRandom, prodFeaturesWithRandom,
           streaming.globalBias, streaming.observedExamples)
@@ -131,7 +131,7 @@ object LatentMatrixFactorizationModel extends Serializable {
   def predict(
       uFeatures: Option[LatentID],
       pFeatures: Option[LatentID],
-      globalBias: Double): Rating[Long] = {
+      globalBias: Float): Rating[Long] = {
     val user = uFeatures.head.id
     val product = pFeatures.head.id
     val finalRating =
@@ -158,23 +158,22 @@ object LatentMatrixFactorizationModel extends Serializable {
   def getRating(
       userFeatures: LatentID,
       prodFeatures: LatentID,
-      bias: Double): Double = {
-    val dotProd = userFeatures.latent.vector dot prodFeatures.latent.vector
-    dotProd + userFeatures.latent.bias + prodFeatures.latent.bias + bias
+      bias: Float): Float = {
+    val dot = userFeatures.latent.vector dot prodFeatures.latent.vector
+    dot + userFeatures.latent.bias + prodFeatures.latent.bias + bias
   }
 }
 
-case class LatentFactor(var bias: Double, var vector: breeze.linalg.DenseVector[Double]) extends Serializable {
+case class LatentFactor(var bias: Float, vector: breeze.linalg.DenseVector[Float]) extends Serializable {
 
   def +=(other: LatentFactor): this.type = {
-    this.vector =  vector + other.vector
-    this.bias = bias + other.bias
+    val resBias = bias + other.bias
+    VectorUtils.addInto(vector.toArray, other.vector.toArray)
     this
   }
 
   def add(other: LatentFactor): this.type = {
     this += other
-    this
   }
 
   override def toString: String = {
@@ -194,6 +193,6 @@ class LatentFactorGenerator(rank: Int) extends Serializable {
   private val random = new java.util.Random()
 
   def nextValue(): LatentFactor = {
-    LatentFactor(random.nextDouble, breeze.linalg.randomDouble(rank).map(x => x.toDouble))
+    LatentFactor(random.nextFloat, randomDouble(rank).map(x => x.toFloat))
   }
 }
