@@ -47,10 +47,10 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
       val step2: RDD[(Long, Long, Double, Array[Double], Double, Array[Double])] = step.map(x =>
         MFGradientDescent.oneSidedGradientStep(x._1, x._2, x._3, x._4, x._5, x._6, globalBias, currentStepSize, currentBiasStepSize, lambda))
       val stepDF = step2.toDF("userid", "performerid", "amount", "userFeatures", "userBiasGrad", "itemFeatures")
-      //val userGradients = step2.map(x => (x._1, x._4)).aggregateByKey((0, DenseVector.zeros[Double](rank)))(
-      //    seqOp = (base, example) => base += example,
-       //   combOp = (a, b) => a += b
-       // )
+      val userGradients = step2.map(x => (x._1, x._4)).aggregateByKey((0, DenseVector.zeros[Double](rank)))(
+          seqOp = (base, example) => base += example,
+          combOp = (a, b) => a += b
+        )
 
       val uf = userFactors.leftOuterJoin[LatentFactor](userGradients)
         userFeatures = uf map {
