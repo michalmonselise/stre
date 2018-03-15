@@ -8,8 +8,10 @@ import breeze.linalg._
 import org.apache.spark.sql.Row
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql._
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.udf
+import org.apache.spark.sql.types._
 
 /**
  * A Gradient Descent Optimizer specialized for Matrix Factorization.
@@ -19,52 +21,67 @@ import org.apache.spark.sql.functions.udf
 class MFGradientDescent(params: LatentMatrixFactorizationParams) {
 
   def this() = this(new LatentMatrixFactorizationParams)
-
+  val spark: SparkSession = SparkSession.builder().getOrCreate()
   def train(
-           userFactors: DataFrame,
-           itemFactors: DataFrame,
-           ratings: DataFrame,
+           userFactors: org.apache.spark.sql.DataFrame,
+           itemFactors: org.apache.spark.sql.DataFrame,
+           ratings: org.apache.spark.sql.DataFrame,
            globalBias: Double,
-           rank: Int): DataFrame = {
+           rank: Int): org.apache.spark.sql.DataFrame = {
 
-    val lambda = params.getLambda.toDouble
-    val stepSize = params.getStepSize
+    val lambda = params.getLambda
+    val stepSize: Double = params.getStepSize
     val stepDecay = params.getStepDecay
     val biasStepSize = params.getBiasStepSize
     val iter = params.getIter
-    val intermediateStorageLevel = params.getIntermediateStorageLevel
+    //val intermediateStorageLevel = params.getIntermediateStorageLevel
     val rank = params.getRank
 
-    for (i <- 0 until iter) {
-      val currentStepSize = stepSize * math.pow(stepDecay, i)
-      val currentBiasStepSize = biasStepSize * math.pow(stepDecay, i)
+    def iteration(stepSize: Double,
+                  biasStepSize: Double,
+                  globalBias: Double,
+                  stepDecay: Double,
+                  rank: Int,
+                  userFactors: org.apache.spark.sql.DataFrame,
+                  itemFactors: org.apache.spark.sql.DataFrame,
+                  ratings: org.apache.spark.sql.DataFrame,
+                  lambda: Double,
+                  iter: Int
+                 ): org.apache.spark.sql.DataFrame = {
+      val currentStepSize = stepSize * math.pow(stepDecay, iter)
+      val currentBiasStepSize = biasStepSize * math.pow(stepDecay, iter)
       val userFactorsRenamed = userFactors.withColumnRenamed("features", "userFeatures")
       val itemFactorsRenamed = itemFactors.withColumnRenamed("features", "itemFeatures")
       val gradients = ratings.join(userFactorsRenamed, ratings.col("userid") === userFactors("id")).drop("id").drop("lastSpendDate")
       val grad = gradients.join(itemFactorsRenamed, gradients.col("performerid") === itemFactors.col("id")).drop("id")
       val step = grad.rdd.map(x => (x.getLong(0), x.getLong(1), x.getDouble(2), x.getList(3).toArray.map(_.toString.toDouble)
-          ,x.getDouble(4), x.getList(5).toArray.map(_.toString.toDouble)))
-      val step2: RDD[(Long, Long, Double, Array[Double], Double, Array[Double])] = step.map(x =>
+        ,x.getDouble(4), x.getList(5).toArray.map(_.toString.toDouble)))
+      val schema = new StructType()
+        .add(StructField("userid", LongType, nullable = true))
+        .add(StructField("performerid", LongType, nullable = true))
+        .add(StructField("amount", DoubleType, nullable = true))
+        .add(StructField("userFeatures", ArrayType(DoubleType, containsNull = false), nullable = true))
+        .add(StructField("userBiasGrad", DoubleType, nullable = true))
+        .add(StructField("itemFeatures", ArrayType(DoubleType, containsNull = false), nullable = true))
+      val step2: RDD[Row] = step.map(x =>
         MFGradientDescent.oneSidedGradientStep(x._1, x._2, x._3, x._4, x._5, x._6, globalBias, currentStepSize, currentBiasStepSize, lambda))
-      val stepDF = step2.toDF("userid", "performerid", "amount", "userFeatures", "userBiasGrad", "itemFeatures")
-      val userGradients = step2.map(x => (x._1, x._4)).aggregateByKey((0, DenseVector.zeros[Double](rank)))(
-          seqOp = (base, example) => base += example,
-          combOp = (a, b) => a += b
-        )
-
-      val uf = userFactors.leftOuterJoin[LatentFactor](userGradients)
-        userFeatures = uf map {
-        case (id, (base: LatentFactor, gradient: Option[LatentFactor])) =>
-        val a = gradient.head.add(base)
-        LatentID(a, id)
-      }
+      val stepDF: org.apache.spark.sql.DataFrame = spark.createDataFrame(step2, schema)
+      val output = stepDF.select("userid", "userFeatures").withColumnRenamed("userFeatures", "features")
+      output
     }
+    var curUserFactors = userFactors
+    var prevUserFactors = userFactors
+    for (i <- 0 until iter) {
+      curUserFactors = iteration(stepSize, biasStepSize, globalBias, stepDecay, rank, prevUserFactors, itemFactors, ratings, lambda, i)
+      prevUserFactors = curUserFactors
+    }
+  curUserFactors
   }
 }
 
 
 
-private[spark] object MFGradientDescent extends Serializable {
+object MFGradientDescent extends Serializable {
 
   // Exposed for testing
 //  private[spark] def gradientStep(x: Row,
@@ -96,7 +113,7 @@ private[spark] object MFGradientDescent extends Serializable {
                            globalBias: Double,
                            stepSize: Double,
                            biasStepSize: Double,
-                           lambda: Double): (Long, Long, Double, Array[Double], Double, Array[Double]) = {
+                           lambda: Double): Row = {
     val predicted: Double = getRating(userFeatures, prodFeatures, bias, globalBias)
     val epsilon: Double = amount - predicted
     val user: DenseVector[Double] = DenseVector(userFeatures)
@@ -106,7 +123,7 @@ private[spark] object MFGradientDescent extends Serializable {
     val uFeatures = stepSize * (prod * epsilon - lambda * user)
     val userBiasGrad: Double = biasStepSize * (epsilon - lambda * bias)
 
-    (userid, performerid, amount, uFeatures.toArray, userBiasGrad, prodFeatures)
+    Row(userid, performerid, amount, uFeatures.toArray, userBiasGrad, prodFeatures)
   }
 
   def getRating(userFeatures: Array[Double],

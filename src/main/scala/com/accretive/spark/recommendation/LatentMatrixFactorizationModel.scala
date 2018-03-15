@@ -6,7 +6,7 @@ import org.slf4j.{Logger, LoggerFactory}
 import org.apache.spark.ml.recommendation.ALS.Rating
 import org.apache.spark.ml.linalg.Vector
 import breeze.linalg._
-import com.accretive.spark.utils.VectorUtils
+
 import org.apache.spark.rdd.RDD
 
 class LatentMatrixFactorizationModel(

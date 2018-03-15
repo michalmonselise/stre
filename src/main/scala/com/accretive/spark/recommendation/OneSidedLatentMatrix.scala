@@ -14,6 +14,7 @@ import org.apache.spark.sql.Column
 import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.ml.linalg.Vectors
 import org.apache.spark.sql.functions.udf
+import org.apache.spark.storage.StorageLevel
 
 class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
   protected val optimizer = new MFGradientDescent(params)
@@ -75,6 +76,69 @@ class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
       .setOutputCol("userFeatures")
     val output = assembler.transform(df_dummy)
     output.withColumn("bias", rand()).select("id", "userFeatures", "bias")
+  }
+}
+
+class LatentMatrixFactorizationParams() {
+  var rank: Int = 20
+  var stepSize: Double = 1.0
+  var biasStepSize: Double = 1.0
+  var stepDecay: Double = 0.9
+  var lambda: Double = 10.0
+  var iter: Int = 10
+  var intermediateStorageLevel: org.apache.spark.storage.StorageLevel =
+    org.apache.spark.storage.StorageLevel.MEMORY_AND_DISK_SER
+  var seed: Long = System.currentTimeMillis()
+
+  def getRank: Int = rank
+  def getStepSize: Double = stepSize
+  def getBiasStepSize: Double = biasStepSize
+  def getStepDecay: Double = stepDecay
+  def getLambda: Double = lambda
+  def getIter: Int = iter
+  def getIntermediateStorageLevel: org.apache.spark.storage.StorageLevel = intermediateStorageLevel
+  def getSeed: Long = seed
+
+  /** The rank of the matrices. Default = 20 */
+  def setRank(x: Int): this.type = {
+    rank = x
+    this
+  }
+  /** The step size to use during Gradient Descent. Default = 0.001 */
+  def setStepSize(x: Double): this.type = {
+    stepSize = x
+    this
+  }
+  /** The step size to use for bias vectors during Gradient Descent. Default = 0.0001 */
+  def setBiasStepSize(x: Double): this.type = {
+    biasStepSize = x
+    this
+  }
+  /** The value to decay the step size after each iteration. Default = 0.95 */
+  def setStepDecay(x: Double): this.type = {
+    stepDecay = x
+    this
+  }
+  /** The regularization parameter. Default = 0.1 */
+  def setLambda(x: Double): this.type = {
+    lambda = x
+    this
+  }
+  /** The number of iterations for Gradient Descent. Default = 5 */
+  def setIter(x: Int): this.type = {
+    iter = x
+    this
+  }
+  /** The persistence level for intermediate RDDs. Default = MEMORY_AND_DISK_SER */
+  def setIntermediateStorageLevel(x: org.apache.spark.storage.StorageLevel): this.type = {
+    intermediateStorageLevel = x
+    this
+  }
+
+  /** The number of iterations for Gradient Descent. Default = 5 */
+  def setSeed(x: Long): this.type = {
+    seed = x
+    this
   }
 }
 

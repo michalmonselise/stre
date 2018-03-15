@@ -106,8 +106,8 @@ class StreamingLatentMatrixFactorization(params: LatentMatrixFactorizationParams
   def trainOn(initialModel: ALSModel, data: DStream[Rating[Long]]): Unit = {
     data.foreachRDD { (rdd, time) =>
       val (initialLatentModel, numExamples) =
-        LatentMatrixFactorizationModel.initialize(rdd, params, initialModel, model, isStreaming = true)
-      model = Some(optimizer.train(rdd, initialModel, initialLatentModel, numExamples).
+        LatentMatrixFactorizationModel.initialize(rdd, params, model, isStreaming = true)
+      model = Some(optimizer.train(rdd, initialModel, numExamples, globalBias=0.05, rank=20).
         asInstanceOf[StreamingLatentMatrixFactorizationModel])
       log.info(s"Model updated at time $time")
     }
