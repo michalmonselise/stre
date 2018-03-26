@@ -89,7 +89,7 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
         print("i={}", i)
         print("curUserFactors", curUserFactors.show.toString())
       }
-      curUserFactors = iteration(stepSize, biasStepSize, globalBias, stepDecay, rank, prevUserFactors, itemFactors, ratings, lambda, i)
+      curUserFactors = iteration(stepSize, biasStepSize, globalBias, stepDecay, rank, prevUserFactors, itemFactors, ratings, lambda, i).cache
       prevUserFactors = curUserFactors
     }
   curUserFactors
