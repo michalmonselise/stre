@@ -168,7 +168,7 @@ case class LatentFactor(var bias: Float, vector: breeze.linalg.DenseVector[Float
 
   def +=(other: LatentFactor): this.type = {
     val resBias = bias + other.bias
-    VectorUtils.addInto(vector.toArray, other.vector.toArray)
+    vector += other.vector
     this
   }
 

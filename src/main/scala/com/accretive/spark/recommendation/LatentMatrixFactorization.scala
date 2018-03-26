@@ -101,23 +101,23 @@ class StreamingLatentMatrixFactorization(params: LatentMatrixFactorizationParams
    * and updates the model based on every subsequent
    * batch of data from the stream.
    *
-   * @param data DStream containing Ratings
+ //  * @param data DStream containing Ratings
    */
-  def trainOn(initialModel: ALSModel, data: DStream[Rating[Long]]): Unit = {
-    data.foreachRDD { (rdd, time) =>
-      val (initialLatentModel, numExamples) =
-        LatentMatrixFactorizationModel.initialize(rdd, params, model, isStreaming = true)
-      model = Some(optimizer.train(rdd, initialModel, numExamples, globalBias=0.05, rank=20).
-        asInstanceOf[StreamingLatentMatrixFactorizationModel])
-      log.info(s"Model updated at time $time")
-    }
-  }
+//  def trainOn(initialModel: ALSModel, data: DStream[Rating[Long]]): Unit = {
+//    data.foreachRDD { (rdd, time) =>
+//      val (initialLatentModel, numExamples) =
+//        LatentMatrixFactorizationModel.initialize(rdd, params, model, isStreaming = true)
+//      model = Some(optimizer.train(rdd, initialModel, numExamples, globalBias=0.05, rank=20).
+//        asInstanceOf[StreamingLatentMatrixFactorizationModel])
+//      log.info(s"Model updated at time $time")
+//    }
+//  }
 }
 
 /**
  * Parameters for training a Matrix Factorization Model
  */
-class LatentMatrixFactorizationParams() {
+class LatentMatrixFactorizationParams() extends Serializable {
   private var rank: Int = 20
   private var stepSize: Double = 1.0
   private var biasStepSize: Double = 1.0
