@@ -32,7 +32,8 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
            itemFactors: org.apache.spark.sql.DataFrame,
            ratings: org.apache.spark.sql.DataFrame,
            globalBias: Double,
-           rank: Int): org.apache.spark.sql.DataFrame = {
+           rank: Int,
+           verbose: Boolean): org.apache.spark.sql.DataFrame = {
 
     val lambda = params.getLambda
     val stepSize: Double = params.getStepSize
@@ -84,8 +85,10 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
     var curUserFactors = userFactors
     var prevUserFactors = userFactors
     for (i <- 0 until iter) {
-      print("i={}", i)
-      print("curUserFactors", curUserFactors.toString())
+      if (verbose) {
+        print("i={}", i)
+        print("curUserFactors", curUserFactors.show.toString())
+      }
       curUserFactors = iteration(stepSize, biasStepSize, globalBias, stepDecay, rank, prevUserFactors, itemFactors, ratings, lambda, i)
       prevUserFactors = curUserFactors
     }

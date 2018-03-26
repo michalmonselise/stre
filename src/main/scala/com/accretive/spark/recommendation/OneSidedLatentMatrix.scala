@@ -26,12 +26,12 @@ class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
   def trainOn(userFactors: org.apache.spark.sql.DataFrame,
               itemFactors: org.apache.spark.sql.DataFrame,
               ratings: org.apache.spark.sql.DataFrame,
-              globalBias: Double, rank: Int): Some[org.apache.spark.sql.DataFrame] = {
+              globalBias: Double, rank: Int, verbose: Boolean=false): Some[org.apache.spark.sql.DataFrame] = {
     val userFactorsRenamed = userFactors.withColumnRenamed("features", "userFeatures")
     val usersDf: org.apache.spark.sql.DataFrame = ratings.select("userid").withColumnRenamed("userid", "id").except(userFactorsRenamed.select("id"))
     var usersFactorsNew: org.apache.spark.sql.DataFrame = makeNew(usersDf, params.getRank)
     //userFactorsBias = userFactorsBias.union(usersFactorsNew)
-    val users = Some(optimizer.train(userFactorsRenamed, itemFactors, ratings, globalBias, rank))
+    val users = Some(optimizer.train(userFactorsRenamed, itemFactors, ratings, globalBias, rank, verbose))
     users
   }
 
