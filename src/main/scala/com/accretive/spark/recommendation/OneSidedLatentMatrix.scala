@@ -1,21 +1,11 @@
 package com.accretive.spark.recommendation
 
-import java.util.Random
-
-import breeze.linalg
 import com.accretive.spark.optimization._
-import org.apache.spark.ml.recommendation.ALS.Rating
-import org.apache.spark.ml.recommendation.ALSModel
 import breeze.linalg._
 import com.accretive.spark.recommendation.LatentMatrixFactorizationModel.log
-import org.apache.spark.sql.Row
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.Column
-import org.apache.spark.ml.feature.VectorAssembler
-import org.apache.spark.ml.linalg.Vectors
-import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.udf
 import org.apache.spark.storage.StorageLevel
 import java.util.Random._
@@ -28,7 +18,9 @@ class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
               ratings: org.apache.spark.sql.DataFrame,
               globalBias: Double, rank: Int, verbose: Boolean=false): Some[org.apache.spark.sql.DataFrame] = {
     val userFactorsRenamed = userFactors.withColumnRenamed("features", "userFeatures")
-    val usersDf: org.apache.spark.sql.DataFrame = ratings.select("userid").withColumnRenamed("userid", "id").except(userFactorsRenamed.select("id"))
+    val usersDf: org.apache.spark.sql.DataFrame = ratings.select("userid")
+      .withColumnRenamed("userid", "id")
+      .except(userFactorsRenamed.select("id"))
     var usersFactorsNew: org.apache.spark.sql.DataFrame = makeNew(usersDf, params.getRank)
     //userFactorsBias = userFactorsBias.union(usersFactorsNew)
     val users = Some(optimizer.train(userFactorsRenamed, itemFactors, ratings, globalBias, rank, verbose))
@@ -71,18 +63,6 @@ class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
 
     val dfArray = df.withColumn("userFeatures", createRandomArray(lit(rank)))
     val dfArrayBias = dfArray.withColumn("bias", org.apache.spark.sql.functions.rand())
-//    var df_dummy = df
-//    var i: Int = 0
-//    var inputCols: Array[String] = Array()
-//    for (i <- 0 to rank) {
-//      df_dummy = df_dummy.withColumn("feature".concat(i.toString), org.apache.spark.sql.functions.rand())
-//      inputCols = inputCols :+ "feature".concat(i.toString)
-//    }
-//    val assembler = new org.apache.spark.ml.feature.VectorAssembler()
-//      .setInputCols(inputCols)
-//      .setOutputCol("userFeatures")
-//    val output = assembler.transform(df_dummy)
-//    output.withColumn("bias", org.apache.spark.sql.functions.rand()).select("id", "userFeatures", "bias")
     dfArrayBias
   }
 }

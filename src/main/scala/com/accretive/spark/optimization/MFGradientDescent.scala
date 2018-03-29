@@ -1,16 +1,11 @@
 package com.accretive.spark.optimization
 
-import breeze.linalg
 import com.accretive.spark.recommendation._
-import org.apache.spark.ml.recommendation.ALS.Rating
-import org.apache.spark.ml.recommendation.ALSModel
 import breeze.linalg._
-import org.apache.spark.ml.linalg.Vectors
 import org.apache.spark.sql.Row
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql._
-import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.types._
 import org.slf4j.{Logger, LoggerFactory}
@@ -66,18 +61,18 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
       //print("grad columns={}", grad.columns.mkString)
       val step = grad.rdd.map(x => (x.getLong(0), x.getLong(1), x.getDouble(2),
         x.getAs[scala.collection.mutable.WrappedArray[Float]](3), x.getDouble(4), x.getAs[scala.collection.mutable.WrappedArray[Float]](5)))
-      val schema = (new org.apache.spark.sql.types.StructType()
+      val schema = new org.apache.spark.sql.types.StructType()
         .add(org.apache.spark.sql.types.StructField("id",
           org.apache.spark.sql.types.LongType, true))
         .add(org.apache.spark.sql.types.StructField("Features",
-          org.apache.spark.sql.types.ArrayType(org.apache.spark.sql.types.FloatType, false), true)))
+          org.apache.spark.sql.types.ArrayType(org.apache.spark.sql.types.FloatType, false), true))
       val step2: org.apache.spark.rdd.RDD[(Long, Array[Float])] = step.map(x =>
         MFGradientDescent.oneSidedGradientStep(x._1, x._2, x._3, x._4, x._5, x._6,
           globalBias, currentStepSize, currentBiasStepSize, lambda)).persist(intermediateStorageLevel)
-      val userVectors = (step2
+      val userVectors = step2
         .map{ case (k: Long, v: Array[Float]) => (k, DenseVector(v)) }
         .foldByKey(DenseVector(Array.fill(params.getRank)(0f)))(_ += _)
-        .mapValues(v => v.toArray).map({case (a,b) => Row(a,b.toArray) }))
+        .mapValues(v => v.toArray).map({case (a,b) => Row(a,b.toArray) })
       val stepDF: org.apache.spark.sql.DataFrame = spark.createDataFrame(userVectors, schema)
       stepDF
     }
@@ -87,7 +82,7 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
     for (i <- 0 until iter) {
       if (verbose) {
         print("i={}", i)
-        print("curUserFactors", curUserFactors.show.toString())
+        print("curUserFactors", curUserFactors.show.toString)
       }
       curUserFactors = iteration(stepSize, biasStepSize, globalBias, stepDecay, rank, prevUserFactors, itemFactors, ratings, lambda, i).cache
       prevUserFactors = curUserFactors
@@ -124,29 +119,6 @@ object MFGradientDescent extends Serializable {
     (userid, scaledFeatures.toArray)
   }
 
-  def oneSidedNoBias(userid: Long,
-                     performerid: Long,
-                     amount: Double,
-                     userFeatures: WrappedArray[Float],
-                     bias:Double,
-                     prodFeatures: WrappedArray[Float],
-                     globalBias: Double,
-                     stepSize: Double,
-                     biasStepSize: Double,
-                     lambda: Double): (Long, Array[Float]) = {
-    val userF = userFeatures.toArray
-    val prodF = prodFeatures.toArray
-    val predicted: Double = getRating(userF, prodF, 0.0, 0.0)
-    val epsilon: Double = amount - predicted
-    val user: DenseVector[Float] = DenseVector(userF)
-    val prod: DenseVector[Float] = DenseVector(prodF)
-
-    val uFeatures: DenseVector[Float] = stepSize.toFloat * ((prod * epsilon.toFloat) - (user * lambda.toFloat))
-    val scaledFeatures = scaleVector(uFeatures)
-    val userBiasGrad: Double = epsilon - lambda
-
-    (userid, scaledFeatures.toArray)
-  }
 
   def getRating(userFeatures: Array[Float],
                 prodFeatures: Array[Float],
