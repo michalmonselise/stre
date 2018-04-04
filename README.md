@@ -1,6 +1,8 @@
 Streaming Matrix Factorization for Spark
 ----------------------------------------
 
+![Scheme](images/27qtcx.jpg)
+
 This library contains methods to train a Matrix Factorization Recommendation System on Spark.
 For user `u` and item `i`, the rating is calculated as:
 

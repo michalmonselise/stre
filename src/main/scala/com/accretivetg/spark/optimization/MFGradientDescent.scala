@@ -38,7 +38,6 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
     val intermediateStorageLevel = params.intermediateStorageLevel
     val rank = params.rank
 
-    def joiner ()
     def iteration(stepSize: Double,
                   biasStepSize: Double,
                   globalBias: Double,
