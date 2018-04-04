@@ -1,8 +1,7 @@
-package com.accretive.spark.recommendation
+package com.accretivetg.spark.recommendation
 
-import com.accretive.spark.optimization._
+import com.accretivetg.spark.optimization._
 import breeze.linalg._
-import com.accretive.spark.recommendation.LatentMatrixFactorizationModel.log
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.Column
@@ -27,32 +26,32 @@ class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
     users
   }
 
-  def predict(userid: Long,
-              performerid: Long,
-              userFactors: Some[Array[Float]],
-              itemFactors:Some[Array[Float]],
-              ratings: org.apache.spark.sql.DataFrame,
-              bias: Double,
-              globalBias: Double): (Long, Long, Double) = {
-    val finalRating =
-      if (userFactors.isDefined && itemFactors.isDefined) {
-        (userid, performerid, MFGradientDescent.getRating(userFactors.head, itemFactors.head, bias, globalBias))
-      } else if (userFactors.isDefined) {
-        //log.warn(s"Product data missing for product id $performerid. Will use user factors.")
-        val rating = globalBias + bias
-        (userid, performerid, 0.0)
-      } else if (itemFactors.isDefined) {
-        //log.warn(s"User data missing for user id $userid. Will use product factors.")
-        val rating = globalBias + bias
-        (userid, performerid, 0.0)
-      } else {
-        //log.warn(s"Both user and product factors missing for ($userid, $performerid). " +
-         // "Returning global average.")
-        val rating = globalBias
-        (userid, performerid, 0.0)
-      }
-    finalRating
-  }
+//  def predict(userid: Long,
+//              performerid: Long,
+//              userFactors: Some[Array[Float]],
+//              itemFactors:Some[Array[Float]],
+//              ratings: org.apache.spark.sql.DataFrame,
+//              bias: Double,
+//              globalBias: Double): (Long, Long, Double) = {
+//    val finalRating =
+//      if (userFactors.isDefined && itemFactors.isDefined) {
+//        (userid, performerid, MFGradientDescent.getRating(userFactors.head, itemFactors.head, bias, globalBias))
+//      } else if (userFactors.isDefined) {
+//        //log.warn(s"Product data missing for product id $performerid. Will use user factors.")
+//        val rating = globalBias + bias
+//        (userid, performerid, 0.0)
+//      } else if (itemFactors.isDefined) {
+//        //log.warn(s"User data missing for user id $userid. Will use product factors.")
+//        val rating = globalBias + bias
+//        (userid, performerid, 0.0)
+//      } else {
+//        //log.warn(s"Both user and product factors missing for ($userid, $performerid). " +
+//         // "Returning global average.")
+//        val rating = globalBias
+//        (userid, performerid, 0.0)
+//      }
+//    finalRating
+//  }
 
 
   def makeNew(df: org.apache.spark.sql.DataFrame, rank: Int): org.apache.spark.sql.DataFrame = {

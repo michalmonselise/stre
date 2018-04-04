@@ -1,6 +1,6 @@
-package com.accretive.spark.optimization
+package com.accretivetg.spark.optimization
 
-import com.accretive.spark.recommendation._
+import com.accretivetg.spark.recommendation._
 import breeze.linalg._
 import org.apache.spark.sql.Row
 import org.apache.spark.rdd.RDD
