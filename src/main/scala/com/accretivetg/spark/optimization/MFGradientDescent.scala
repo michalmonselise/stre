@@ -30,14 +30,15 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
            rank: Int,
            verbose: Boolean): org.apache.spark.sql.DataFrame = {
 
-    val lambda = params.getLambda
-    val stepSize: Double = params.getStepSize
-    val stepDecay = params.getStepDecay
-    val biasStepSize = params.getBiasStepSize
-    val iter = params.getIter
-    val intermediateStorageLevel = params.getIntermediateStorageLevel
-    val rank = params.getRank
+    val lambda = params.lambda
+    val stepSize: Double = params.stepSize
+    val stepDecay = params.stepDecay
+    val biasStepSize = params.biasStepSize
+    val iter = params.iter
+    val intermediateStorageLevel = params.intermediateStorageLevel
+    val rank = params.rank
 
+    def joiner ()
     def iteration(stepSize: Double,
                   biasStepSize: Double,
                   globalBias: Double,
@@ -71,7 +72,7 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
           globalBias, currentStepSize, currentBiasStepSize, lambda)).persist(intermediateStorageLevel)
       val userVectors = step2
         .map{ case (k: Long, v: Array[Float]) => (k, DenseVector(v)) }
-        .foldByKey(DenseVector(Array.fill(params.getRank)(0f)))(_ += _)
+        .foldByKey(DenseVector(Array.fill(params.rank)(0f)))(_ += _)
         .mapValues(v => v.toArray).map({case (a,b) => Row(a,b.toArray) })
       val stepDF: org.apache.spark.sql.DataFrame = spark.createDataFrame(userVectors, schema)
       stepDF
