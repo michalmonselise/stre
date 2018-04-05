@@ -5,11 +5,12 @@ import breeze.linalg._
 import org.apache.spark.sql.Row
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql._
-import org.apache.spark.sql.functions.udf
+import org.apache.spark.sql.functions.{lit, udf}
+import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.types._
 import org.slf4j.{Logger, LoggerFactory}
 
+import scala.collection.mutable
 import scala.collection.mutable._
 
 /**
@@ -23,12 +24,12 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
   def this() = this(new LatentMatrixFactorizationParams)
   val spark = org.apache.spark.sql.SparkSession.builder().getOrCreate()
   def train(
-           userFactors: org.apache.spark.sql.DataFrame,
-           itemFactors: org.apache.spark.sql.DataFrame,
-           ratings: org.apache.spark.sql.DataFrame,
+           userFactors: DataFrame,
+           itemFactors: DataFrame,
+           ratings: DataFrame,
            globalBias: Double,
            rank: Int,
-           verbose: Boolean): org.apache.spark.sql.DataFrame = {
+           verbose: Boolean): DataFrame = {
 
     val lambda = params.lambda
     val stepSize: Double = params.stepSize
@@ -43,37 +44,40 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
                   globalBias: Double,
                   stepDecay: Double,
                   rank: Int,
-                  userFactors: org.apache.spark.sql.DataFrame,
-                  itemFactors: org.apache.spark.sql.DataFrame,
-                  ratings: org.apache.spark.sql.DataFrame,
+                  userFactors: DataFrame,
+                  itemFactors: DataFrame,
+                  ratings: DataFrame,
                   lambda: Double,
                   k: Int
-                 ): org.apache.spark.sql.DataFrame = {
+                 ): DataFrame = {
       val currentStepSize = stepSize * math.pow(stepDecay, k)
       val currentBiasStepSize = biasStepSize * math.pow(stepDecay, k)
       var userFactorsBias = if (!userFactors.columns.contains("bias"))
         userFactors.withColumn("bias", org.apache.spark.sql.functions.rand()) else userFactors
       val userFactorsRenamed = userFactorsBias.withColumnRenamed("features", "userFeatures")
       val itemFactorsRenamed = itemFactors.withColumnRenamed("features", "itemFeatures")
-      val gradients = ratings.join(userFactorsRenamed, ratings.col("userid") === userFactorsRenamed("id")).drop("id").drop("lastSpendDate")
+      val joinUsers = ratings.join(userFactorsRenamed, ratings.col("userid") === userFactorsRenamed("id")).drop("id").drop("lastSpendDate")
       //print("gradient columns={}", gradients.columns.mkString)
-      val grad = gradients.join(itemFactorsRenamed, gradients.col("performerid") === itemFactorsRenamed.col("id")).drop("id")
+      val joinAll = joinUsers.join(itemFactorsRenamed, joinUsers.col("performerid") === itemFactorsRenamed.col("id")).drop("id")
       //print("grad columns={}", grad.columns.mkString)
-      val step = grad.rdd.map(x => (x.getLong(0), x.getLong(1), x.getDouble(2),
-        x.getAs[scala.collection.mutable.WrappedArray[Float]](3), x.getDouble(4), x.getAs[scala.collection.mutable.WrappedArray[Float]](5)))
-      val schema = new org.apache.spark.sql.types.StructType()
-        .add(org.apache.spark.sql.types.StructField("id",
-          org.apache.spark.sql.types.LongType, true))
-        .add(org.apache.spark.sql.types.StructField("Features",
-          org.apache.spark.sql.types.ArrayType(org.apache.spark.sql.types.FloatType, false), true))
-      val step2: org.apache.spark.rdd.RDD[(Long, Array[Float])] = step.map(x =>
-        MFGradientDescent.oneSidedGradientStep(x._1, x._2, x._3, x._4, x._5, x._6,
-          globalBias, currentStepSize, currentBiasStepSize, lambda)).persist(intermediateStorageLevel)
-      val userVectors = step2
-        .map{ case (k: Long, v: Array[Float]) => (k, DenseVector(v)) }
+
+      val gradients = joinAll.withColumn("userFeatures", MFGradientDescent.oneSided(joinAll.col("amount"), joinAll.col("userFeatures"),
+        joinAll.col("bias"), joinAll.col("itemFeatures"), lit(globalBias), lit(currentStepSize),
+        lit(currentBiasStepSize), lit(lambda))).persist(intermediateStorageLevel)
+//      val step = grad.rdd.map(x => (x.getLong(0), x.getLong(1), x.getDouble(2),
+//        x.getAs[scala.collection.mutable.WrappedArray[Float]](3), x.getDouble(4),
+//        x.getAs[scala.collection.mutable.WrappedArray[Float]](5)))
+      val schema = new StructType()
+        .add(StructField("id", LongType, true))
+        .add(StructField("Features", ArrayType(FloatType, false), true))
+//      val step2: org.apache.spark.rdd.RDD[Array[Float]] = step.map(x =>
+//        MFGradientDescent.oneSidedGradientStep(x._3, x._4, x._5, x._6,
+//          globalBias, currentStepSize, currentBiasStepSize, lambda)).persist(intermediateStorageLevel)
+      val userVectors = gradients.select("userid", "userFeatures").rdd
+        .map{ case Row(k: Long, v: WrappedArray[Float]) => (k, DenseVector(v.toArray)) }
         .foldByKey(DenseVector(Array.fill(params.rank)(0f)))(_ += _)
         .mapValues(v => v.toArray).map({case (a,b) => Row(a,b.toArray) })
-      val stepDF: org.apache.spark.sql.DataFrame = spark.createDataFrame(userVectors, schema)
+      val stepDF: DataFrame = spark.createDataFrame(userVectors, schema)
       stepDF
     }
 
@@ -89,22 +93,32 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
     }
   curUserFactors
   }
+
+
+  def addNew(df: DataFrame, rank: Int): DataFrame = {
+    val rand: java.util.Random = new java.util.Random
+    val createRandomArray: UserDefinedFunction = udf((rank: Int) => {
+      Array.fill(rank)(rand.nextFloat())
+    })
+
+    val dfArray = df.withColumn("userFeatures", createRandomArray(lit(rank)))
+    val dfArrayBias = dfArray.withColumn("bias", org.apache.spark.sql.functions.rand())
+    dfArrayBias
+  }
 }
 
 
 
 object MFGradientDescent extends Serializable {
 
-  def oneSidedGradientStep(userid: Long,
-                           performerid: Long,
-                           amount: Double,
-                           userFeatures: WrappedArray[Float],
-                           bias:Double,
-                           prodFeatures: WrappedArray[Float],
-                           globalBias: Double,
-                           stepSize: Double,
-                           biasStepSize: Double,
-                           lambda: Double): (Long, Array[Float]) = {
+  val oneSided = udf((amount:Double,
+    userFeatures: WrappedArray[Float],
+    bias:Double,
+    prodFeatures: WrappedArray[Float],
+    globalBias: Double,
+    stepSize: Double,
+    biasStepSize: Double,
+    lambda: Double) => {
     val userF = userFeatures.toArray
     val prodF = prodFeatures.toArray
     val predicted: Double = getRating(userF, prodF, bias, globalBias)
@@ -116,8 +130,9 @@ object MFGradientDescent extends Serializable {
     val scaledFeatures = scaleVector(uFeatures)
     val userBiasGrad: Double = biasStepSize * (epsilon - lambda * bias)
 
-    (userid, scaledFeatures.toArray)
-  }
+    scaledFeatures.toArray
+  })
+
 
 
   def getRating(userFeatures: Array[Float],
@@ -135,6 +150,7 @@ object MFGradientDescent extends Serializable {
     if (magnitude > 0) {vec / magnitude} else vec
   }
 }
+
 
 
 

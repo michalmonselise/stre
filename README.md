@@ -21,7 +21,7 @@ Installation
 
 Include this package in your Spark Applications using:
 
-### spark-shellnor spark-submit
+### spark-shell or spark-submit
 
 ```
 > $SPARK_HOME/bin/spark-shell --jars streamingMF-assembly-0.1.0.jar
@@ -68,6 +68,6 @@ stream2.print()
 val stream3 = stream2.foreachRDD { x =>
     var m1 = one.trainOn(prevUsers, itemFactors, currData, 0.001, params.getRank)
     }
-m1.head.show
+m1.show
 ```
 
