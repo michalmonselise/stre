@@ -28,7 +28,6 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
            itemFactors: DataFrame,
            ratings: DataFrame,
            globalBias: Double,
-           rank: Int,
            verbose: Boolean): DataFrame = {
 
     val lambda = params.lambda
@@ -39,40 +38,33 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
     val intermediateStorageLevel = params.intermediateStorageLevel
     val rank = params.rank
 
-    def iteration(stepSize: Double,
-                  biasStepSize: Double,
-                  globalBias: Double,
-                  stepDecay: Double,
-                  rank: Int,
-                  userFactors: DataFrame,
-                  itemFactors: DataFrame,
-                  ratings: DataFrame,
-                  lambda: Double,
-                  k: Int
-                 ): DataFrame = {
-      val currentStepSize = stepSize * math.pow(stepDecay, k)
-      val currentBiasStepSize = biasStepSize * math.pow(stepDecay, k)
+    def joiner(userFactors: DataFrame, itemFactors: DataFrame, ratings: DataFrame): DataFrame = {
       var userFactorsBias = if (!userFactors.columns.contains("bias"))
         userFactors.withColumn("bias", org.apache.spark.sql.functions.rand()) else userFactors
       val userFactorsRenamed = userFactorsBias.withColumnRenamed("features", "userFeatures")
       val itemFactorsRenamed = itemFactors.withColumnRenamed("features", "itemFeatures")
       val joinUsers = ratings.join(userFactorsRenamed, ratings.col("userid") === userFactorsRenamed("id")).drop("id").drop("lastSpendDate")
-      //print("gradient columns={}", gradients.columns.mkString)
       val joinAll = joinUsers.join(itemFactorsRenamed, joinUsers.col("performerid") === itemFactorsRenamed.col("id")).drop("id")
-      //print("grad columns={}", grad.columns.mkString)
+      joinAll
+    }
 
+    def iteration(stepSize: Double,
+                  biasStepSize: Double,
+                  globalBias: Double,
+                  stepDecay: Double,
+                  rank: Int,
+                  joinAll: DataFrame,
+                  lambda: Double,
+                  k: Int
+                 ): DataFrame = {
+      val currentStepSize = stepSize * math.pow(stepDecay, k)
+      val currentBiasStepSize = biasStepSize * math.pow(stepDecay, k)
       val gradients = joinAll.withColumn("userFeatures", MFGradientDescent.oneSided(joinAll.col("amount"), joinAll.col("userFeatures"),
         joinAll.col("bias"), joinAll.col("itemFeatures"), lit(globalBias), lit(currentStepSize),
         lit(currentBiasStepSize), lit(lambda))).persist(intermediateStorageLevel)
-//      val step = grad.rdd.map(x => (x.getLong(0), x.getLong(1), x.getDouble(2),
-//        x.getAs[scala.collection.mutable.WrappedArray[Float]](3), x.getDouble(4),
-//        x.getAs[scala.collection.mutable.WrappedArray[Float]](5)))
       val schema = new StructType()
         .add(StructField("id", LongType, true))
         .add(StructField("Features", ArrayType(FloatType, false), true))
-//      val step2: org.apache.spark.rdd.RDD[Array[Float]] = step.map(x =>
-//        MFGradientDescent.oneSidedGradientStep(x._3, x._4, x._5, x._6,
-//          globalBias, currentStepSize, currentBiasStepSize, lambda)).persist(intermediateStorageLevel)
       val userVectors = gradients.select("userid", "userFeatures").rdd
         .map{ case Row(k: Long, v: WrappedArray[Float]) => (k, DenseVector(v.toArray)) }
         .foldByKey(DenseVector(Array.fill(params.rank)(0f)))(_ += _)
@@ -81,6 +73,8 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
       stepDF
     }
 
+    val joinAll = joiner(userFactors, itemFactors, ratings)
+
     var curUserFactors = userFactors
     var prevUserFactors = userFactors
     for (i <- 0 until iter) {
@@ -88,7 +82,7 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
         print("i={}", i)
         print("curUserFactors", curUserFactors.show.toString)
       }
-      curUserFactors = iteration(stepSize, biasStepSize, globalBias, stepDecay, rank, prevUserFactors, itemFactors, ratings, lambda, i).cache
+      curUserFactors = iteration(stepSize, biasStepSize, globalBias, stepDecay, rank, joinAll, lambda, i).cache
       prevUserFactors = curUserFactors
     }
   curUserFactors
@@ -132,7 +126,6 @@ object MFGradientDescent extends Serializable {
 
     scaledFeatures.toArray
   })
-
 
 
   def getRating(userFeatures: Array[Float],

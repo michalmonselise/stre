@@ -22,7 +22,7 @@ class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
       .except(userFactorsRenamed.select("id"))
     var usersFactorsNew: DataFrame = makeNew(usersDf, params.rank)
     //userFactorsBias = userFactorsBias.union(usersFactorsNew)
-    val users = optimizer.train(userFactorsRenamed, itemFactors, ratings, globalBias, rank, verbose)
+    val users = optimizer.train(userFactorsRenamed, itemFactors, ratings, globalBias, verbose)
     users
   }
 
