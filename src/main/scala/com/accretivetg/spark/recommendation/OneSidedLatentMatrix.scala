@@ -15,7 +15,7 @@ class OneSidedLatentMatrix(params: LatentMatrixFactorizationParams) {
   def trainOn(userFactors: DataFrame,
               itemFactors: DataFrame,
               ratings: DataFrame,
-              globalBias: Double, rank: Int, verbose: Boolean=false): DataFrame = {
+              globalBias: Double, verbose: Boolean=false): DataFrame = {
     val userFactorsRenamed = userFactors.withColumnRenamed("features", "userFeatures")
     val usersDf: DataFrame = ratings.select("userid")
       .withColumnRenamed("userid", "id")
