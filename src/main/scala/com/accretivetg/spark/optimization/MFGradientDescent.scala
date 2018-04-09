@@ -3,14 +3,12 @@ package com.accretivetg.spark.optimization
 import com.accretivetg.spark.recommendation._
 import breeze.linalg._
 import org.apache.spark.sql.Row
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{lit, udf}
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.types._
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.mutable
 import scala.collection.mutable._
 
 /**
@@ -39,13 +37,20 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
     val rank = params.rank
 
     def joiner(userFactors: DataFrame, itemFactors: DataFrame, ratings: DataFrame): DataFrame = {
-      var userFactorsBias = if (!userFactors.columns.contains("bias"))
-        userFactors.withColumn("bias", org.apache.spark.sql.functions.rand()) else userFactors
-      val userFactorsRenamed = userFactorsBias.withColumnRenamed("features", "userFeatures")
+      val userFactorsRenamed = userFactors.withColumnRenamed("features", "userFeatures")
       val itemFactorsRenamed = itemFactors.withColumnRenamed("features", "itemFeatures")
-      val joinUsers = ratings.join(userFactorsRenamed, ratings.col("userid") === userFactorsRenamed("id")).drop("id").drop("lastSpendDate")
-      val joinAll = joinUsers.join(itemFactorsRenamed, joinUsers.col("performerid") === itemFactorsRenamed.col("id")).drop("id")
-      joinAll
+      val joinUsers = ratings.join(userFactorsRenamed, ratings.col("userid") === userFactorsRenamed("id"), "left_outer").drop("id")
+
+      val createRandomArray: UserDefinedFunction = udf((arr: WrappedArray[Float], rank: Int) => {
+        val rand: java.util.Random = new java.util.Random
+        var arr1 = Option(arr.toArray)
+         arr1.getOrElse(Array.fill(rank)(rand.nextFloat()))
+      })
+      val joinRand = joinUsers.withColumn("userFeatures", createRandomArray(joinUsers.col("userFeatures"), lit(rank)))
+      val joinAll = joinRand.join(itemFactorsRenamed, joinUsers.col("performerid") === itemFactorsRenamed.col("id")).drop("id")
+      val joinBias = if (!joinAll.columns.contains("bias"))
+        joinAll.withColumn("bias", org.apache.spark.sql.functions.rand()) else joinAll
+      joinBias
     }
 
     def iteration(stepSize: Double,

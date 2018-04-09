@@ -1,10 +1,8 @@
 package com.accretivetg.spark.recommendation
 
 import com.accretivetg.spark.optimization._
-import breeze.linalg._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.Column
 import org.apache.spark.sql.functions.udf
 import org.apache.spark.storage.StorageLevel
 import java.util.Random._
