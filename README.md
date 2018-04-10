@@ -61,12 +61,14 @@ val schema = new org.apache.spark.sql.types.StructType()
   .add(org.apache.spark.sql.types.StructField("amount",
     org.apache.spark.sql.types.DoubleType, true))
 
+val one = new MFGradientDescent(params)
+
 val stream1 = pubsubStream.map(message => new String(message.getData())).map(x => x.split(" "))
 val stream2 = stream1.map(x =>
   Row(x.head.toLong, x.tail.head.toLong, x.tail.tail.head.toDouble))
 stream2.print()
 val stream3 = stream2.foreachRDD { x =>
-    var m1 = one.trainOn(prevUsers, itemFactors, currData, 0.001, params.getRank)
+    var m1 = one.train(prevUsers, itemFactors, currData, 0.001, params)
     }
 m1.show
 ```
