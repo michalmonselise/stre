@@ -1,9 +1,5 @@
 package com.accretivetg.spark.recommendation
 
-import org.apache.spark.storage.StorageLevel
-import org.slf4j.{Logger, LoggerFactory}
-
-
 /**
  * Parameters for training a Matrix Factorization Model
  */
