@@ -26,7 +26,7 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
            itemFactors: DataFrame,
            ratings: DataFrame,
            globalBias: Double,
-           verbose: Boolean): DataFrame = {
+           verbose: Boolean=false): DataFrame = {
 
     val lambda = params.lambda
     val stepSize: Double = params.stepSize
