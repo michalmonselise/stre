@@ -54,9 +54,9 @@ import org.apache.spark.streaming.pubsub.SparkPubsubMessage
 import org.apache.spark.sql.Row
 
 val schema = new org.apache.spark.sql.types.StructType()
-  .add(org.apache.spark.sql.types.StructField("userid",
+  .add(org.apache.spark.sql.types.StructField("user",
     org.apache.spark.sql.types.LongType, true))
-  .add(org.apache.spark.sql.types.StructField("performerid",
+  .add(org.apache.spark.sql.types.StructField("product",
     org.apache.spark.sql.types.LongType, true))
   .add(org.apache.spark.sql.types.StructField("amount",
     org.apache.spark.sql.types.DoubleType, true))

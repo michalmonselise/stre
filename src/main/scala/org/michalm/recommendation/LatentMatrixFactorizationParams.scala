@@ -1,4 +1,4 @@
-package com.accretivetg.spark.recommendation
+package org.michalm.recommendation
 
 /**
  * Parameters for training a Matrix Factorization Model

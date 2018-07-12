@@ -11,8 +11,6 @@ name := "streamingmf"
 
 version := "0.1.0"
 
-organization := "icf.datascience"
-
 licenses := Seq("Apache-2.0" -> url("http://opensource.org/licenses/Apache-2.0"))
 
 credentials += Credentials(Path.userHome / ".ivy2" / ".sbtcredentials")

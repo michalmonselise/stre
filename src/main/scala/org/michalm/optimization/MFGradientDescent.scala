@@ -1,6 +1,5 @@
-package com.accretivetg.spark.optimization
+package org.michalm.optimization
 
-import com.accretivetg.spark.recommendation._
 import breeze.linalg._
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.DataFrame
@@ -8,6 +7,7 @@ import org.apache.spark.sql.functions.{lit, udf}
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.types._
 import org.slf4j.{Logger, LoggerFactory}
+import org.michalm.recommendation.LatentMatrixFactorizationParams
 
 import scala.collection.mutable._
 
@@ -39,7 +39,7 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
     def joiner(userFactors: DataFrame, itemFactors: DataFrame, ratings: DataFrame): DataFrame = {
       val userFactorsRenamed = userFactors.withColumnRenamed("features", "userFeatures")
       val itemFactorsRenamed = itemFactors.withColumnRenamed("features", "itemFeatures")
-      val joinUsers = ratings.join(userFactorsRenamed, ratings.col("userid") === userFactorsRenamed("id"), "left_outer").drop("id")
+      val joinUsers = ratings.join(userFactorsRenamed, ratings.col("user") === userFactorsRenamed("id"), "left_outer").drop("id")
 
       val createRandomArray: UserDefinedFunction = udf((arr: WrappedArray[Float], rank: Int) => {
         val rand: java.util.Random = new java.util.Random
@@ -47,7 +47,7 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
          arr1.getOrElse(Array.fill(rank)(rand.nextFloat()))
       })
       val joinRand = joinUsers.withColumn("userFeatures", createRandomArray(joinUsers.col("userFeatures"), lit(rank)))
-      val joinAll = joinRand.join(itemFactorsRenamed, joinUsers.col("performerid") === itemFactorsRenamed.col("id")).drop("id")
+      val joinAll = joinRand.join(itemFactorsRenamed, joinUsers.col("product") === itemFactorsRenamed.col("id")).drop("id")
       val joinBias = if (!joinAll.columns.contains("bias"))
         joinAll.withColumn("bias", org.apache.spark.sql.functions.rand()) else joinAll
       joinBias
@@ -70,7 +70,7 @@ class MFGradientDescent(params: LatentMatrixFactorizationParams) {
       val schema = new StructType()
         .add(StructField("id", LongType, true))
         .add(StructField("Features", ArrayType(FloatType, false), true))
-      val userVectors = gradients.select("userid", "userFeatures").rdd
+      val userVectors = gradients.select("user", "userFeatures").rdd
         .map{ case Row(k: Long, v: WrappedArray[Float]) => (k, DenseVector(v.toArray)) }
         .foldByKey(DenseVector(Array.fill(params.rank)(0f)))(_ += _)
         .mapValues(v => v.toArray).map({case (a,b) => Row(a,b.toArray) })
