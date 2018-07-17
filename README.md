@@ -46,8 +46,8 @@ To train a streaming model, use the `StreamingLatentMatrixFactorization` class.
 The following usage will train a Model that would predict ratings between 1.0, and 5.0 with rank 20:
 
 ```scala
-import com.accretivetg.spark.optimization._
-import com.accretivetg.spark.recommendation._
+import com.michalm.spark.optimization._
+import com.michalm.spark.recommendation._
 import org.apache.spark.streaming.dstream.ReceiverInputDStream
 import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming.pubsub.SparkPubsubMessage
